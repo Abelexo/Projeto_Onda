@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Central de gravacoes</title>
+  <style>
+    :root { color-scheme: light; --ink:#17211b; --muted:#66736a; --paper:#f4f1e8; --panel:#fffdf8; --line:#d9ded5; --accent:#176b52; --accent-dark:#0d4b3a; --warn:#9a5b12; --danger:#a43f32; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:linear-gradient(135deg,#e7eee6 0%,var(--paper) 54%,#e9e4d8 100%); color:var(--ink); font:16px/1.45 Georgia, serif; min-height:100vh; }
+    main { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:42px 0 64px; }
+    header { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:30px; }
+    h1 { font-size:clamp(2rem,5vw,4.2rem); line-height:.95; margin:0; letter-spacing:0; max-width:600px; }
+    header p { max-width:310px; margin:0; color:var(--muted); }
+    .layout { display:grid; grid-template-columns:minmax(280px, .8fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
+    section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; }
+    h2 { margin:0 0 18px; font-size:1.35rem; }
+    label { display:block; color:var(--muted); font:700 .78rem/1.2 system-ui,sans-serif; letter-spacing:.04em; text-transform:uppercase; margin:14px 0 6px; }
+    input, button { width:100%; min-height:44px; border:1px solid #bec9bf; padding:10px 12px; font:16px system-ui,sans-serif; border-radius:4px; }
+    input:focus { outline:2px solid #a8d3c0; border-color:var(--accent); }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    button { margin-top:20px; border-color:var(--accent); background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
+    button:hover { background:var(--accent-dark); }
+    button:disabled { opacity:.6; cursor:wait; }
+    #mensagem { min-height:24px; color:var(--muted); margin:12px 0 0; font-family:system-ui,sans-serif; font-size:.9rem; }
+    .job { border-top:1px solid var(--line); padding:15px 0; display:grid; grid-template-columns:1fr auto; gap:12px; }
+    .job:first-child { border-top:0; padding-top:0; }
+    .job strong { display:block; font-size:1.08rem; }
+    .job small { color:var(--muted); font-family:system-ui,sans-serif; }
+    .status { align-self:start; color:var(--accent-dark); background:#dceee5; padding:4px 8px; border-radius:20px; font:700 .72rem system-ui,sans-serif; white-space:nowrap; }
+    .status[data-status="aguardando_conexao"] { color:var(--warn); background:#f7e7c9; }
+    .status[data-status="erro"] { color:var(--danger); background:#f7d9d4; }
+    .status[data-status="convertendo"] { color:#245b78; background:#d9edf7; }
+    .status[data-status="cancelado"] { color:#5f6368; background:#e5e7e9; }
+    .status[data-status="sem_gravacoes"] { color:#6b5a26; background:#f5edc8; }
+    .progress-label { display:flex; justify-content:space-between; gap:12px; margin-top:12px; color:var(--muted); font:700 .75rem system-ui,sans-serif; }
+    progress { width:100%; height:10px; accent-color:var(--accent); }
+    .job-error { color:var(--danger); font: .85rem system-ui,sans-serif; margin:8px 0 0; }
+    .videos { margin-top:14px; font-family:system-ui,sans-serif; }
+    .videos summary { color:var(--accent-dark); cursor:pointer; font-weight:700; }
+    .video-item { border-top:1px solid var(--line); margin-top:10px; padding-top:10px; }
+    .video-item small { display:block; margin-bottom:6px; }
+    video { display:block; width:min(100%, 520px); background:#101513; }
+    .cancelar { width:auto; min-height:34px; margin-top:12px; padding:6px 10px; border-color:var(--danger); background:transparent; color:var(--danger); font-size:.85rem; }
+    .cancelar:hover { background:#f7d9d4; }
+    .excluir { width:auto; min-height:30px; margin-top:8px; padding:4px 8px; border-color:#bec9bf; background:transparent; color:var(--muted); font-size:.78rem; border-radius:3px; }
+    .excluir:hover { border-color:var(--danger); color:var(--danger); background:#fdf2f0; }
+    .filtros { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+    .btn-filtro { width:auto; min-height:30px; padding:4px 10px; border:1px solid #bec9bf; background:#fff; color:var(--muted); font:600 .78rem system-ui,sans-serif; border-radius:15px; cursor:pointer; margin-top:0; }
+    .btn-filtro.ativo { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .empty { color:var(--muted); margin:0; }
+    @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Central de gravacoes</h1>
+    <p>Cadastre um periodo. O trabalhador continua baixando mesmo quando esta pagina estiver fechada.</p>
+  </header>
+  <div class="layout">
+    <section>
+      <h2>Novo download</h2>
+      <form id="formulario">
+        <label for="dvr_ip">Endereco da DVR</label>
+        <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10">
+        <label for="escola">Nome da escola</label>
+        <input id="escola" name="escola" placeholder="Escola central">
+        <label for="codigo_escola">Codigo da escola</label>
+        <input id="codigo_escola" name="codigo_escola" required placeholder="3140">
+        <div class="row">
+          <div><label for="usuario">Usuario</label><input id="usuario" name="usuario" required value="admin"></div>
+          <div><label for="senha">Senha</label><input id="senha" name="senha" type="password" required></div>
+        </div>
+        <label for="cameras">Cameras</label>
+        <input id="cameras" name="cameras" required placeholder="1,2,5">
+        <div class="row">
+          <div><label for="data_inicio">Inicio</label><input id="data_inicio" name="data_inicio" type="datetime-local" required></div>
+          <div><label for="data_fim">Fim</label><input id="data_fim" name="data_fim" type="datetime-local" required></div>
+        </div>
+        <label for="modo_download">Protocolo de Download</label>
+        <select id="modo_download" name="modo_download" style="width:100%; height:40px; padding:8px; border:1px solid #bec9bf; border-radius:3px; background:#fff; margin-bottom:12px; font-size:.9rem;">
+          <option value="auto" selected>Automático (SDK Porta 8000 + Fallback ISAPI Porta 80)</option>
+          <option value="sdk">SDK Nativo (Porta 8000 - igual ao WD Desk)</option>
+          <option value="isapi">ISAPI Web (Porta 80 HTTP)</option>
+        </select>
+        <button id="enviar" type="submit">Adicionar ao trabalhador</button>
+        <p id="mensagem" role="status"></p>
+      </form>
+    </section>
+    <section>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2 style="margin:0;">Atividade recente</h2>
+      </div>
+      <div class="filtros">
+        <button type="button" class="btn-filtro ativo" data-filtro="todos">Todos</button>
+        <button type="button" class="btn-filtro" data-filtro="ativos">Em andamento</button>
+        <button type="button" class="btn-filtro" data-filtro="concluidos">Concluidos</button>
+        <button type="button" class="btn-filtro" data-filtro="cancelados">Cancelados</button>
+      </div>
+      <div id="jobs"><p class="empty">Carregando...</p></div>
+    </section>
+  </div>
+</main>
+<script>
+  const formulario = document.querySelector('#formulario');
+  const mensagem = document.querySelector('#mensagem');
+  const jobs = document.querySelector('#jobs');
+  const campo = nome => document.querySelector('#' + nome).value.trim();
+  const fusoEmpresa = 'America/Sao_Paulo';
+  let todosJobs = [];
+  let filtroAtual = 'todos';
+
+  const iso = valor => new Date(`${valor}:00-03:00`).toISOString().replace('.000Z', 'Z');
+  const formatBytes = valor => {
+    if (valor === undefined || valor === null) return '0 KB';
+    if (valor >= 1024 * 1024) return `${(valor / 1024 / 1024).toFixed(1)} MB`;
+    return `${(valor / 1024).toFixed(0)} KB`;
+  };
+  const formatDuration = segundos => {
+    if (segundos === null || segundos === undefined) return '--';
+    if (segundos < 60) return `${segundos}s`;
+    const minutos = Math.floor(segundos / 60);
+    const horas = Math.floor(minutos / 60);
+    return horas ? `${horas}h ${minutos % 60}min` : `${minutos}min ${segundos % 60}s`;
+  };
+  const formatSpeed = valor => {
+    if (!valor) return '--';
+    if (valor >= 1024 * 1024) return `${(valor / 1024 / 1024).toFixed(1)} MB/s`;
+    return `${(valor / 1024).toFixed(1)} KB/s`;
+  };
+  const mostrarData = valor => {
+    const data = new Date(valor);
+    return Number.isNaN(data.getTime()) ? valor : data.toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short', timeZone:fusoEmpresa });
+  };
+
+  function renderizarJobs() {
+    let lista = todosJobs;
+    if (filtroAtual === 'ativos') {
+      lista = todosJobs.filter(j => ['novo', 'buscando', 'baixando', 'convertendo', 'aguardando_conexao'].includes(j.status));
+    } else if (filtroAtual === 'concluidos') {
+      lista = todosJobs.filter(j => j.status === 'concluido');
+    } else if (filtroAtual === 'cancelados') {
+      lista = todosJobs.filter(j => ['cancelado', 'sem_gravacoes', 'erro'].includes(j.status));
+    }
+
+    if (!lista.length) {
+      jobs.innerHTML = `<p class="empty">Nenhum download ${filtroAtual === 'todos' ? 'cadastrado' : 'nessa categoria'}.</p>`;
+      return;
+    }
+
+    jobs.innerHTML = lista.map(job => `<article class="job">
+      <div><strong>${job.escola || job.dvr_ip}</strong><small>${job.dvr_ip} | codigo ${job.codigo_escola || '-'} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}</strong><br>${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}<br>${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
+      <div class="progress-label"><span>${formatBytes(job.bytes_baixados)} / ${formatBytes(job.bytes_total)} (${job.progresso_percentual}%)</span><span>${formatSpeed(job.bytes_por_segundo)}</span></div>
+      <progress max="100" value="${job.progresso_percentual}"></progress>
+      <small>Tempo: ${formatDuration(job.tempo_segundos)} | Restante estimado: ${formatDuration(job.segundos_restantes)}</small>
+      ${job.trecho_atual ? `<div class="progress-label"><span>Trecho atual: camera ${job.camera_atual}</span><span>${job.status === 'erro' ? 'verificar' : job.status}</span></div>` : ''}
+      ${job.erro_atual ? `<p class="job-error">Falha: ${job.erro_atual}</p>` : ''}
+      ${job.status === 'sem_gravacoes' ? '<p class="job-error" style="color:#6b5a26">Nenhuma gravacao encontrada. Confira IP, camera, data e fuso horario da DVR.</p>' : ''}
+      ${job.arquivos && job.arquivos.length ? `<details class="videos"><summary>Ver gravacoes (${job.arquivos.length})</summary>${job.arquivos.map(arquivo => `<div class="video-item"><small>Camera ${arquivo.camera} - ${arquivo.nome}</small><video controls preload="none" src="${arquivo.url}"></video></div>`).join('')}</details>` : ''}
+      <div style="display:flex; gap:8px; align-items:center;">
+        ${!['concluido', 'cancelado', 'sem_gravacoes'].includes(job.status) ? `<button class="cancelar" type="button" data-job-id="${job.id}">Cancelar download</button>` : ''}
+        ${['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(job.status) ? `<button class="excluir" type="button" data-job-id="${job.id}">Remover da lista</button>` : ''}
+      </div>
+      </div>
+      <span class="status" data-status="${job.status}">${job.status}</span>
+    </article>`).join('');
+  }
+
+  async function atualizarJobs() {
+    try {
+      const resposta = await fetch('/api/jobs');
+      todosJobs = await resposta.json();
+      renderizarJobs();
+    } catch (erro) {
+      jobs.innerHTML = '<p class="empty">Servidor indisponivel.</p>';
+    }
+  }
+
+  async function cancelarJob(jobId) {
+    if (!window.confirm('Cancelar este download? Os trechos ja concluidos serao preservados.')) return;
+    try {
+      const resposta = await fetch(`/api/jobs/${jobId}/cancel`, { method:'POST' });
+      const retorno = await resposta.json();
+      if (!resposta.ok) throw new Error(retorno.erro || 'Falha ao cancelar download');
+      await atualizarJobs();
+    } catch (erro) { mensagem.textContent = erro.message; }
+  }
+
+  async function excluirJob(jobId) {
+    if (!window.confirm('Remover este item da lista?')) return;
+    try {
+      const resposta = await fetch(`/api/jobs/${jobId}`, { method:'DELETE' });
+      const retorno = await resposta.json();
+      if (!resposta.ok) throw new Error(retorno.erro || 'Falha ao remover');
+      await atualizarJobs();
+    } catch (erro) { mensagem.textContent = erro.message; }
+  }
+
+  document.querySelectorAll('.btn-filtro').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-filtro').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      filtroAtual = btn.dataset.filtro;
+      renderizarJobs();
+    });
+  });
+
+  jobs.addEventListener('click', evento => {
+    const botaoCancelar = evento.target.closest('.cancelar');
+    if (botaoCancelar) cancelarJob(botaoCancelar.dataset.jobId);
+    const botaoExcluir = evento.target.closest('.excluir');
+    if (botaoExcluir) excluirJob(botaoExcluir.dataset.jobId);
+  });
+
+  formulario.addEventListener('submit', async evento => {
+    evento.preventDefault();
+    const botao = document.querySelector('#enviar'); botao.disabled = true; mensagem.textContent = 'Enviando...';
+    try {
+      const inicioLocal = campo('data_inicio');
+      const fimLocal = campo('data_fim');
+      if (new Date(fimLocal) <= new Date(inicioLocal)) throw new Error('O horario final deve ser depois do horario inicial.');
+      const dados = {
+        dvr_ip: campo('dvr_ip'),
+        escola: campo('escola'),
+        codigo_escola: campo('codigo_escola'),
+        usuario: campo('usuario'),
+        senha: campo('senha'),
+        cameras: campo('cameras'),
+        data_inicio: iso(inicioLocal),
+        data_fim: iso(fimLocal),
+        modo_download: campo('modo_download')
+      };
+      const resposta = await fetch('/api/jobs', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dados) });
+      const retorno = await resposta.json(); if (!resposta.ok) throw new Error(retorno.erro || 'Falha ao criar download');
+      mensagem.textContent = 'Download adicionado. O trabalhador vai iniciar em seguida.'; formulario.reset(); document.querySelector('#usuario').value = 'admin'; await atualizarJobs();
+    } catch (erro) { mensagem.textContent = erro.message; }
+    finally { botao.disabled = false; }
+  });
+
+  atualizarJobs(); setInterval(atualizarJobs, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+# Arquivos de documentacao interna (nao vao para o repositorio)
+GITHUB_TUTORIAL.txt
+ARQUITETURA_GRAVACAO_LOCALHOST_ISAPI.txt
+TUTORIAL_WINDOWS_SERVER.txt
+STATUS_PROJETO.txt
+MANUAL_FRONTEND_E_DOWNLOADS.txt
+GITIGNORE_GUIDE.txt
+EXPLANATION.txt
+
+# Banco de dados (dados sensiveis)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+
+# Arquivos de teste
+teste_dvr.py
+
+# Ambiente Python
+venv/
+__pycache__/
+*.py[cod]
+
+# Logs e temporarios
+*.log
+*.tmp
+
+# IDE / editor
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Credenciais
+*.pem
+*.key
