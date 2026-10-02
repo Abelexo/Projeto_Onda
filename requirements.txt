@@ -1,2 +1,16 @@
+# Dependências Python instaladas via pip
 Flask>=3.0,<4
 requests>=2.31,<3
+
+# Dependências de SISTEMA (instalar separadamente, não via pip):
+#
+# Linux (Ubuntu/Debian):
+#   sudo apt install ffmpeg
+#   sudo apt install gstreamer1.0-tools python3-gi python3-gst-1.0
+#
+# Windows:
+#   - Instalar FFmpeg: https://ffmpeg.org/download.html
+#   - Para o modo SDK (porta 8000): instalar o SDK Hikvision (HCNetSDK.dll)
+#
+# Sem FFmpeg ou GStreamer o download funciona mas o corte/conversão do
+# vídeo irá falhar no final.

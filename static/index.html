@@ -66,8 +66,10 @@
         <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10">
         <label for="escola">Nome da escola</label>
         <input id="escola" name="escola" placeholder="Escola central">
-        <label for="codigo_escola">Codigo da escola</label>
-        <input id="codigo_escola" name="codigo_escola" required placeholder="3140">
+        <div class="row">
+          <div><label for="codigo_escola">Codigo escola</label><input id="codigo_escola" name="codigo_escola" required placeholder="3140"></div>
+          <div><label for="porta_sdk">Porta SDK</label><input id="porta_sdk" name="porta_sdk" type="number" placeholder="8000" value="8000"></div>
+        </div>
         <div class="row">
           <div><label for="usuario">Usuario</label><input id="usuario" name="usuario" required value="admin"></div>
           <div><label for="senha">Senha</label><input id="senha" name="senha" type="password" required></div>
@@ -229,6 +231,7 @@
         cameras: campo('cameras'),
         data_inicio: iso(inicioLocal),
         data_fim: iso(fimLocal),
+        porta_sdk: Number(campo('porta_sdk')) || 8000,
         modo_download: campo('modo_download')
       };
       const resposta = await fetch('/api/jobs', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dados) });

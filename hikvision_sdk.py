@@ -138,6 +138,7 @@ def baixar_por_tempo_sdk(dvr_ip, porta, usuario, senha, camera, inicio_dt, fim_d
     if not carregar_sdk() or _sdk is None:
         raise RuntimeError("DLL/biblioteca do SDK da Hikvision/JFL nao encontrada (pasta sdk_dlls).")
 
+    print(f"[SDK] Conectando em {dvr_ip}:{porta} (porta SDK)...")
     info = NET_DVR_DEVICEINFO_V30()
     user_id = _sdk.NET_DVR_Login_V30(
         dvr_ip.encode('utf-8'),

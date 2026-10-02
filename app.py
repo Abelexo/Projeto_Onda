@@ -103,7 +103,8 @@ def preparar_banco():
                 status TEXT DEFAULT 'novo', -- novo / buscando / baixando / convertendo / concluido / erro / sem_gravacoes / cancelado
                 iniciado_em TEXT,
                 criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
-                modo_download TEXT DEFAULT 'auto' -- auto (SDK 8000 + Fallback ISAPI 80) / sdk / isapi
+                modo_download TEXT DEFAULT 'auto', -- auto (SDK 8000 + Fallback ISAPI 80) / sdk / isapi
+                porta_sdk INTEGER DEFAULT 8000
             )
         """)
         banco.execute("""
@@ -162,6 +163,7 @@ def preparar_banco():
             ("jobs", "iniciado_em", "TEXT"),
             ("jobs", "criado_em", "TEXT DEFAULT CURRENT_TIMESTAMP"),
             ("jobs", "modo_download", "TEXT DEFAULT 'auto'"),
+            ("jobs", "porta_sdk", "INTEGER DEFAULT 8000"),
             ("gravacoes", "bytes_baixados", "INTEGER DEFAULT 0"),
             ("gravacoes", "ultimo_erro", "TEXT"),
             ("gravacoes", "atualizado_em", "TEXT"),
@@ -559,7 +561,7 @@ def nome_pasta_job(escola, codigo_escola, data_inicio, data_fim):
 
 def baixar_pendentes_do_job(
     job_id, dvr_ip, auth, escola, codigo_escola, data_inicio, data_fim,
-    atualizar_status_job, modo_download="auto",
+    atualizar_status_job, modo_download="auto", porta_sdk=8000,
 ):
     with banco_lock:
         pendentes = banco.execute(
@@ -609,20 +611,20 @@ def baixar_pendentes_do_job(
         # internet voltar" que você pediu.
         while True:
             try:
-                # 1. Modo SDK (Porta 8000 - igual ao WD-Desk) se configurado para 'auto' ou 'sdk'
+                # 1. Modo SDK (Porta SDK configurada) se configurado para 'auto' ou 'sdk'
                 sucesso_download = False
                 if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
                     try:
                         dt_ini_ped = datetime.fromisoformat(data_inicio.replace("Z", "+00:00"))
                         dt_fim_ped = datetime.fromisoformat(data_fim.replace("Z", "+00:00"))
-                        print(f"[job {job_id}] Tentando download direto via NetSDK (porta 8000)...")
+                        print(f"[job {job_id}] Tentando download direto via NetSDK (porta {porta_sdk})...")
 
                         def progresso_sdk(pct):
                             t_bytes = int(tamanho * (pct / 100.0))
                             atualizar_progresso(t_bytes)
 
                         sucesso_download = hikvision_sdk.baixar_por_tempo_sdk(
-                            dvr_ip, 8000, auth.username, auth.password,
+                            dvr_ip, porta_sdk, auth.username, auth.password,
                             camera, dt_ini_ped, dt_fim_ped, origem,
                             callback_progresso=progresso_sdk,
                             checar_cancelado=lambda: job_foi_cancelado(job_id)
@@ -718,6 +720,7 @@ def processar_job(job):
     escola = job[7]
     codigo_escola = job[8]
     modo_download = job[9] if len(job) > 9 and job[9] else "auto"
+    porta_sdk = job[10] if len(job) > 10 and job[10] else 8000
 
     auth = HTTPDigestAuth(usuario, senha)
     cameras = [int(c.strip()) for c in cameras_csv.split(",") if c.strip()]
@@ -752,7 +755,7 @@ def processar_job(job):
     atualizar_status_job("baixando")
     baixar_pendentes_do_job(
         job_id, dvr_ip, auth, escola, codigo_escola, data_inicio, data_fim,
-        atualizar_status_job, modo_download=modo_download,
+        atualizar_status_job, modo_download=modo_download, porta_sdk=porta_sdk,
     )
 
     # Só marca como concluído se não sobrou nenhum trecho pendente/baixando
@@ -774,7 +777,7 @@ def loop_trabalhador():
         with banco_lock:
             jobs = banco.execute(
                 "SELECT id, dvr_ip, usuario, senha, cameras, data_inicio, data_fim, "
-                "escola, codigo_escola, modo_download "
+                "escola, codigo_escola, modo_download, porta_sdk "
                 "FROM jobs WHERE status IN ('novo','erro')"
             ).fetchall()
         for job in jobs:
@@ -821,13 +824,18 @@ def criar_job():
     if modo_download not in ("auto", "sdk", "isapi"):
         modo_download = "auto"
 
+    try:
+        porta_sdk = int(dados.get("porta_sdk", 8000))
+    except (ValueError, TypeError):
+        porta_sdk = 8000
+
     with banco_lock:
         cursor = banco.execute(
-            "INSERT INTO jobs (dvr_ip, usuario, senha, cameras, data_inicio, data_fim, escola, codigo_escola, modo_download) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO jobs (dvr_ip, usuario, senha, cameras, data_inicio, data_fim, escola, codigo_escola, modo_download, porta_sdk) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (dados["dvr_ip"], dados["usuario"], dados["senha"], dados["cameras"],
              dados["data_inicio"], dados["data_fim"], dados.get("escola", ""),
-             dados.get("codigo_escola", ""), modo_download),
+             dados.get("codigo_escola", ""), modo_download, porta_sdk),
         )
         banco.commit()
         job_id = cursor.lastrowid
@@ -840,7 +848,7 @@ def listar_jobs():
     with banco_lock:
         jobs = banco.execute(
             "SELECT id, dvr_ip, escola, codigo_escola, cameras, data_inicio, data_fim, "
-            "status, criado_em, iniciado_em, modo_download "
+            "status, criado_em, iniciado_em, modo_download, porta_sdk "
             "FROM jobs ORDER BY id DESC"
         ).fetchall()
         resultado = []
@@ -874,6 +882,7 @@ def listar_jobs():
                 "id": j[0], "dvr_ip": j[1], "escola": j[2], "codigo_escola": j[3],
                 "cameras": j[4], "data_inicio": j[5], "data_fim": j[6], "status": j[7],
                 "criado_em": j[8], "iniciado_em": j[9], "modo_download": j[10] or "auto",
+                "porta_sdk": j[11] or 8000,
                 "tempo_segundos": tempo_segundos,
                 "segundos_restantes": restante, "bytes_por_segundo": int(velocidade),
                 "trechos_total": total, "trechos_concluidos": concluidos or 0,
