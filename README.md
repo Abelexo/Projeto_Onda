@@ -154,6 +154,22 @@ Se a porta 5000 já estiver ocupada, isso significa que o servidor já está
 rodando. Nesse caso o script encerra sem abrir uma segunda instância; acesse
 `http://localhost:5000`.
 
+O FFmpeg e o GStreamer são dependências do sistema, não pacotes Python. No
+Ubuntu/Debian, o setup pode instalá-los com:
+
+```bash
+DVR_INSTALAR_DEPENDENCIAS_SISTEMA=1 ./setup_and_run.sh
+```
+
+O SDK Hikvision não é baixado automaticamente porque é uma biblioteca
+proprietária. Para usar o modo SDK, coloque a biblioteca correspondente em
+`sdk_dlls/` (`HCNetSDK.dll` no Windows ou `libhcnetsdk.so` no Linux). Sem ela,
+o modo automático usa ISAPI na porta 80.
+
+Se a porta 5000 já estiver ocupada, isso significa que o servidor já está
+rodando. Nesse caso o script encerra sem abrir uma segunda instância; acesse
+`http://localhost:5000`.
+
 ## Testes
 
 O arquivo `testes_download.ipynb` contém testes seguros dos contratos de
@@ -165,4 +181,3 @@ deve ser feito com uma câmera e um intervalo curto em cada modo:
 
 O modo automático tenta SDK e usa ISAPI como fallback. O painel mostra o
 estado do trabalhador e o detalhe de erros de busca ou de processamento.
-
