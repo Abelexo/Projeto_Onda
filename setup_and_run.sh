@@ -26,14 +26,26 @@ echo "Atualizando pip e instalando dependencias..."
 if command -v ffmpeg >/dev/null 2>&1; then
     echo "FFmpeg encontrado."
 else
-    echo "AVISO: FFmpeg nao encontrado. O corte/conversao falhara."
-    echo "Ubuntu/Debian: sudo apt install ffmpeg"
+    if [[ "${DVR_INSTALAR_DEPENDENCIAS_SISTEMA:-0}" == "1" ]] && command -v apt-get >/dev/null 2>&1; then
+        echo "FFmpeg ausente. Instalando dependencia do sistema..."
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+    else
+        echo "AVISO: FFmpeg nao encontrado. O corte/conversao usara GStreamer ou falhara."
+        echo "Para instalar automaticamente no Ubuntu/Debian: DVR_INSTALAR_DEPENDENCIAS_SISTEMA=1 ./setup_and_run.sh"
+        echo "Instalacao manual: sudo apt install ffmpeg"
+    fi
 fi
 
 if command -v gst-launch-1.0 >/dev/null 2>&1; then
     echo "GStreamer encontrado."
 else
-    echo "AVISO: GStreamer nao encontrado. Instale gstreamer1.0-tools python3-gi python3-gst-1.0."
+    if [[ "${DVR_INSTALAR_DEPENDENCIAS_SISTEMA:-0}" == "1" ]] && command -v apt-get >/dev/null 2>&1; then
+        echo "GStreamer ausente. Instalando dependencia do sistema..."
+        sudo apt-get install -y gstreamer1.0-tools python3-gi python3-gst-1.0
+    else
+        echo "AVISO: GStreamer nao encontrado. Instale gstreamer1.0-tools python3-gi python3-gst-1.0."
+    fi
 fi
 
 if [[ -f "$PROJECT_ROOT/sdk_dlls/libhcnetsdk.so" ]]; then
