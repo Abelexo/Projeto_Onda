@@ -138,15 +138,4 @@ Os scripts não enviam bancos, gravações ou arquivos temporários para o GitHu
 Eles criam o ambiente `.venv`, instalam `requirements.txt`, verificam FFmpeg,
 GStreamer e o SDK e detectam se a porta 5000 já está em uso.
 
-## Testes
-
-O arquivo `testes_download.ipynb` contém testes seguros dos contratos de
-cancelamento do SDK e do ISAPI, sem credenciais reais. O teste final na DVR
-deve ser feito com uma câmera e um intervalo curto em cada modo:
-
-- `SDK`: porta 8000 e DLLs Hikvision instaladas.
-- `ISAPI`: porta 80, sem depender do SDK.
-
-O modo automático tenta SDK e usa ISAPI como fallback. O painel mostra o
-estado do trabalhador e o detalhe de erros de busca ou de processamento.
 
