@@ -32,7 +32,9 @@ import socket
 import sqlite3
 import threading
 import uuid
+import traceback
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse, parse_qs
 from xml.sax.saxutils import escape
 import xml.etree.ElementTree as ET
@@ -67,6 +69,11 @@ INTERVALO_CICLO_SEGUNDOS = 5
 # Quando a DVR fica inacessível no meio de um download, esse é o intervalo
 # entre as tentativas de "ela já voltou?".
 INTERVALO_RETRY_SEGUNDOS = 15
+FUSO_EMPRESA = ZoneInfo("America/Sao_Paulo")
+
+
+class DownloadCancelado(Exception):
+    """Interrompe uma transferência sem transformar cancelamento em erro."""
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +92,11 @@ banco = conectar_banco()
 # Um "cadeado" para garantir que duas threads nunca escrevam no banco ao
 # mesmo tempo. SQLite não gosta disso, e o cadeado evita erros esquisitos.
 banco_lock = threading.Lock()
+worker_state = {
+    "status": "iniciando",
+    "erro": None,
+    "atualizado_em": None,
+}
 
 
 def preparar_banco():
@@ -104,7 +116,9 @@ def preparar_banco():
                 iniciado_em TEXT,
                 criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
                 modo_download TEXT DEFAULT 'auto', -- auto (SDK 8000 + Fallback ISAPI 80) / sdk / isapi
-                porta_sdk INTEGER DEFAULT 8000
+                porta_sdk INTEGER DEFAULT 8000,
+                finalizado_em TEXT,
+                protocolo_ativo TEXT
             )
         """)
         banco.execute("""
@@ -164,6 +178,9 @@ def preparar_banco():
             ("jobs", "criado_em", "TEXT DEFAULT CURRENT_TIMESTAMP"),
             ("jobs", "modo_download", "TEXT DEFAULT 'auto'"),
             ("jobs", "porta_sdk", "INTEGER DEFAULT 8000"),
+            ("jobs", "erro_detalhe", "TEXT"),
+            ("jobs", "finalizado_em", "TEXT"),
+            ("jobs", "protocolo_ativo", "TEXT"),
             ("gravacoes", "bytes_baixados", "INTEGER DEFAULT 0"),
             ("gravacoes", "ultimo_erro", "TEXT"),
             ("gravacoes", "atualizado_em", "TEXT"),
@@ -211,13 +228,15 @@ def dvr_esta_acessivel(ip, porta=80, timeout=3):
         return False
 
 
-def esperar_dvr_voltar(ip, marcar_status=None):
+def esperar_dvr_voltar(ip, marcar_status=None, checar_cancelado=None):
     """Fica em loop até a DVR responder de novo. 'marcar_status' é uma
     função opcional para você poder ir atualizando o status do job no
     banco enquanto espera (ex.: 'aguardando conexão')."""
     if marcar_status:
         marcar_status("aguardando_conexao")
     while not dvr_esta_acessivel(ip):
+        if checar_cancelado and checar_cancelado():
+            raise DownloadCancelado()
         time.sleep(INTERVALO_RETRY_SEGUNDOS)
 
 
@@ -312,10 +331,15 @@ def formatar_tempo_isapi_compacto(iso_str):
     return iso_str.replace("-", "").replace(":", "")
 
 
+def horario_dvr_local(iso_str):
+    """Converte o UTC armazenado no job para horario local usado pelo SDK."""
+    return datetime.fromisoformat(iso_str.replace("Z", "+00:00")).astimezone(FUSO_EMPRESA).replace(tzinfo=None)
+
+
 def baixar_um_trecho(
     dvr_ip, auth, uri, destino, tamanho_esperado, camera=None,
     data_inicio_pedido=None, data_fim_pedido=None, usuario="admin", senha="",
-    atualizar_progresso=None
+    atualizar_progresso=None, checar_cancelado=None
 ):
     """
     Baixa um trecho de gravação da DVR.
@@ -330,6 +354,8 @@ def baixar_um_trecho(
     ja_baixado = os.path.getsize(parcial) if os.path.exists(parcial) else 0
     if atualizar_progresso:
         atualizar_progresso(ja_baixado)
+    if checar_cancelado and checar_cancelado():
+        raise DownloadCancelado()
 
     sucesso = False
 
@@ -353,9 +379,20 @@ def baixar_um_trecho(
             parcial
         ]
         try:
-            res_rtsp = subprocess.run(cmd_rtsp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+            processo_rtsp = subprocess.Popen(
+                cmd_rtsp, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            while processo_rtsp.poll() is None:
+                if checar_cancelado and checar_cancelado():
+                    processo_rtsp.terminate()
+                    processo_rtsp.wait(timeout=10)
+                    raise DownloadCancelado()
+                time.sleep(0.5)
+            res_rtsp = processo_rtsp
             if res_rtsp.returncode == 0 and os.path.isfile(parcial) and os.path.getsize(parcial) > 1024 * 10:
                 sucesso = True
+        except DownloadCancelado:
+            raise
         except Exception:
             pass
 
@@ -396,6 +433,8 @@ def baixar_um_trecho(
                     modo = "ab" if resp.status_code == 206 else "wb"
                     with open(parcial, modo) as f:
                         for bloco in resp.iter_content(1024 * 1024):
+                            if checar_cancelado and checar_cancelado():
+                                raise DownloadCancelado()
                             f.write(bloco)
                             if atualizar_progresso:
                                 atualizar_progresso(f.tell())
@@ -422,12 +461,8 @@ def baixar_um_trecho(
 
 def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_pedido, data_fim_pedido):
     """
-    Converte o arquivo da DVR (.hik) para MP4 H.264 padrão e corta exatamente
-    na janela de tempo solicitada pelo usuário.
-
-    Por que H.264?
-      - Funciona em 100% dos navegadores (Chrome, Edge, Firefox, celular) sem codecs extras.
-      - H.265 trava nos navegadores e no Windows Server por falta de codec licenciado.
+    Corta o arquivo da DVR na janela pedida. Tenta primeiro preservar o codec
+    original (H.265 ou H.264) sem recodificar; usa H.264 como fallback web.
 
     Por que cortar aqui?
       - A DVR frequentemente entrega blocos físicos de até 1 GB (~2h de gravação).
@@ -446,9 +481,11 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
     deslocamento = max(0.0, (corte_ini - dt_ini_tr).total_seconds())
     duracao = max(0.0, (corte_fim - corte_ini).total_seconds())
 
-    temporario = destino + ".convertendo.mp4"
-    if os.path.exists(temporario):
-        os.remove(temporario)
+    temporario_codec = destino + ".codec.mp4"
+    temporario_h264 = destino + ".convertendo.mp4"
+    for temporario in (temporario_codec, temporario_h264):
+        if os.path.exists(temporario):
+            os.remove(temporario)
 
     # 1. Tenta usar o FFmpeg se estiver disponível (máxima velocidade e simplicidade)
     ffmpeg_bin = shutil.which("ffmpeg") or (
@@ -458,6 +495,31 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
     )
 
     if ffmpeg_bin:
+        # Primeira tentativa: copia o fluxo original, sem recodificar H.265/H.264.
+        comando_codec = [
+            ffmpeg_bin, "-y",
+            "-ss", f"{deslocamento:.3f}",
+            "-t", f"{duracao:.3f}",
+            "-i", origem,
+            "-map", "0:v:0",
+            "-c:v", "copy",
+            "-an",
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            temporario_codec,
+        ]
+        resultado_codec = subprocess.run(
+            comando_codec, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=3600,
+        )
+        if resultado_codec.returncode == 0 and os.path.isfile(temporario_codec):
+            if os.path.getsize(temporario_codec) > 1000:
+                os.replace(temporario_codec, destino)
+                return
+        if os.path.exists(temporario_codec):
+            os.remove(temporario_codec)
+
+        # Segunda tentativa: recodificação H.264 para reprodução ampla no navegador.
         comando = [
             ffmpeg_bin, "-y",
             "-ss", f"{deslocamento:.3f}",
@@ -468,18 +530,20 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
             "-crf", "23",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
-            temporario
+            temporario_h264
         ]
-        resultado = subprocess.run(comando, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        resultado = subprocess.run(
+            comando, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3600
+        )
         if resultado.returncode != 0:
-            if os.path.exists(temporario):
-                os.remove(temporario)
+            if os.path.exists(temporario_h264):
+                os.remove(temporario_h264)
             raise RuntimeError(f"FFmpeg falhou ao converter/cortar: {resultado.stderr.decode('utf-8', errors='ignore')}")
 
-        if not os.path.isfile(temporario) or os.path.getsize(temporario) == 0:
+        if not os.path.isfile(temporario_h264) or os.path.getsize(temporario_h264) == 0:
             raise RuntimeError("O FFmpeg nao gerou um arquivo valido")
 
-        os.replace(temporario, destino)
+        os.replace(temporario_h264, destino)
         return
 
     # 2. Se FFmpeg não estiver instalado, usa GStreamer com filtro de buffers (pad probe)
@@ -495,7 +559,7 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
     # O pipeline usa decodebin (detecta H.265 ou H.264 automaticamente) e x264enc para gerar H.264
     pipeline = Gst.parse_launch(
         f'filesrc location="{origem}" ! decodebin ! videoconvert ! '
-        f'identity name=filtro ! x264enc speed-preset=ultrafast tune=zerolatency ! mp4mux ! filesink location="{temporario}"'
+        f'identity name=filtro ! x264enc speed-preset=ultrafast tune=zerolatency ! mp4mux ! filesink location="{temporario_h264}"'
     )
 
     filtro = pipeline.get_by_name("filtro")
@@ -539,16 +603,16 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
     if mensagem.type == Gst.MessageType.ERROR:
         erro, dbg = mensagem.parse_error()
         pipeline.set_state(Gst.State.NULL)
-        if os.path.exists(temporario):
-            os.remove(temporario)
+        if os.path.exists(temporario_h264):
+            os.remove(temporario_h264)
         raise RuntimeError(f"GStreamer falhou ao converter/cortar: {erro} ({dbg})")
 
     pipeline.set_state(Gst.State.NULL)
 
-    if not os.path.isfile(temporario) or os.path.getsize(temporario) == 0:
+    if not os.path.isfile(temporario_h264) or os.path.getsize(temporario_h264) == 0:
         raise RuntimeError("O corte/conversao GStreamer nao gerou um arquivo MP4 valido")
 
-    os.replace(temporario, destino)
+    os.replace(temporario_h264, destino)
 
 
 def nome_pasta_job(escola, codigo_escola, data_inicio, data_fim):
@@ -581,9 +645,9 @@ def baixar_pendentes_do_job(
         os.makedirs(pasta, exist_ok=True)
         origem = os.path.join(pasta, f"{nome_trecho}.hik")
         try:
-            h_ini = datetime.fromisoformat(data_inicio.replace("Z", "+00:00")).strftime("%d-%m-%Y_%Hh%M")
-            h_fim = datetime.fromisoformat(data_fim.replace("Z", "+00:00")).strftime("%Hh%M")
-            nome_arquivo_mp4 = f"camera_{camera}_{h_ini}_ate_{h_fim}.mp4"
+            h_ini = horario_dvr_local(data_inicio).strftime("%d-%m-%Y_%Hh%M")
+            h_fim = horario_dvr_local(data_fim).strftime("%Hh%M")
+            nome_arquivo_mp4 = f"camera_{camera}_{h_ini}_ate_{h_fim}_{nome_trecho}.mp4"
         except Exception:
             nome_arquivo_mp4 = f"{nome_trecho}.mp4"
         destino = os.path.join(pasta, nome_arquivo_mp4)
@@ -615,9 +679,10 @@ def baixar_pendentes_do_job(
                 sucesso_download = False
                 if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
                     try:
-                        dt_ini_ped = datetime.fromisoformat(data_inicio.replace("Z", "+00:00"))
-                        dt_fim_ped = datetime.fromisoformat(data_fim.replace("Z", "+00:00"))
+                        dt_ini_ped = horario_dvr_local(data_inicio)
+                        dt_fim_ped = horario_dvr_local(data_fim)
                         print(f"[job {job_id}] Tentando download direto via NetSDK (porta {porta_sdk})...")
+                        atualizar_status_job("baixando", protocolo="SDK")
 
                         def progresso_sdk(pct):
                             t_bytes = int(tamanho * (pct / 100.0))
@@ -629,7 +694,11 @@ def baixar_pendentes_do_job(
                             callback_progresso=progresso_sdk,
                             checar_cancelado=lambda: job_foi_cancelado(job_id)
                         )
+                        if job_foi_cancelado(job_id):
+                            raise DownloadCancelado()
                     except Exception as erro_sdk:
+                        if isinstance(erro_sdk, DownloadCancelado):
+                            raise
                         print(f"[job {job_id}] Tentativa SDK falhou: {erro_sdk}")
                         if modo_download == "sdk":
                             raise erro_sdk
@@ -637,11 +706,13 @@ def baixar_pendentes_do_job(
 
                 # 2. Modo ISAPI (Porta 80) caso o SDK não tenha sido usado ou tenha falhado
                 if not sucesso_download:
+                    atualizar_status_job("baixando", protocolo="ISAPI")
                     baixar_um_trecho(
                         dvr_ip, auth, uri, origem, tamanho,
                         camera=camera, data_inicio_pedido=data_inicio,
                         data_fim_pedido=data_fim, usuario=auth.username, senha=auth.password,
-                        atualizar_progresso=atualizar_progresso
+                        atualizar_progresso=atualizar_progresso,
+                        checar_cancelado=lambda: job_foi_cancelado(job_id),
                     )
 
                 if job_foi_cancelado(job_id):
@@ -679,13 +750,25 @@ def baixar_pendentes_do_job(
                     )
                     banco.commit()
                 break
+            except DownloadCancelado:
+                with banco_lock:
+                    banco.execute(
+                        "UPDATE gravacoes SET status='pendente', atualizado_em=CURRENT_TIMESTAMP "
+                        "WHERE job_id=? AND camera=? AND nome_trecho=?",
+                        (job_id, camera, nome_trecho),
+                    )
+                    banco.commit()
+                return
             except requests.exceptions.RequestException:
                 # Problema de rede/conexão: espera e tenta de novo,
                 # sem marcar como erro definitivo.
                 if job_foi_cancelado(job_id):
                     return
                 atualizar_status_job("aguardando_conexao")
-                esperar_dvr_voltar(dvr_ip)
+                esperar_dvr_voltar(
+                    dvr_ip,
+                    checar_cancelado=lambda: job_foi_cancelado(job_id),
+                )
                 if job_foi_cancelado(job_id):
                     return
                 atualizar_status_job("baixando")
@@ -725,14 +808,17 @@ def processar_job(job):
     auth = HTTPDigestAuth(usuario, senha)
     cameras = [int(c.strip()) for c in cameras_csv.split(",") if c.strip()]
 
-    def atualizar_status_job(novo_status):
+    def atualizar_status_job(novo_status, detalhe=None, protocolo=None):
         with banco_lock:
             banco.execute(
-                "UPDATE jobs SET status=?, iniciado_em=CASE WHEN ? IN "
+                "UPDATE jobs SET status=?, erro_detalhe=?, protocolo_ativo=COALESCE(?, protocolo_ativo), "
+                "finalizado_em=CASE WHEN ? IN ('concluido','erro','sem_gravacoes','cancelado') "
+                "THEN COALESCE(finalizado_em, CURRENT_TIMESTAMP) ELSE finalizado_em END, "
+                "iniciado_em=CASE WHEN ? IN "
                 "('baixando','convertendo') THEN COALESCE(iniciado_em, "
                 "CURRENT_TIMESTAMP) ELSE iniciado_em END "
                 "WHERE id=? AND status != 'cancelado'",
-                (novo_status, novo_status, job_id),
+                (novo_status, detalhe, protocolo, novo_status, novo_status, job_id),
             )
             banco.commit()
 
@@ -749,8 +835,9 @@ def processar_job(job):
             "SELECT COUNT(*) FROM gravacoes WHERE job_id=?", (job_id,)
         ).fetchone()[0]
     if quantidade_gravacoes == 0:
-        print(f"[job {job_id}] nenhuma gravacao encontrada no periodo/camera informado")
-        atualizar_status_job("sem_gravacoes")
+        detalhe = "Nenhuma gravacao encontrada no periodo e camera informados."
+        print(f"[job {job_id}] {detalhe}")
+        atualizar_status_job("sem_gravacoes", detalhe)
         return
     atualizar_status_job("baixando")
     baixar_pendentes_do_job(
@@ -764,31 +851,52 @@ def processar_job(job):
     if job_foi_cancelado(job_id):
         return
     with banco_lock:
-        restantes = banco.execute(
-            "SELECT COUNT(*) FROM gravacoes WHERE job_id=? AND status IN ('pendente','baixando')",
+        restantes, erros = banco.execute(
+            "SELECT SUM(status IN ('pendente','baixando')), SUM(status='erro') "
+            "FROM gravacoes WHERE job_id=?",
             (job_id,),
-        ).fetchone()[0]
-    atualizar_status_job("concluido" if restantes == 0 else "erro")
+        ).fetchone()
+    if (restantes or 0) == 0 and (erros or 0) == 0:
+        atualizar_status_job("concluido")
+    else:
+        atualizar_status_job("erro", "Um ou mais trechos nao puderam ser baixados.")
 
 
 def loop_trabalhador():
-    preparar_banco()
+    worker_state["status"] = "executando"
     while True:
-        with banco_lock:
-            jobs = banco.execute(
-                "SELECT id, dvr_ip, usuario, senha, cameras, data_inicio, data_fim, "
-                "escola, codigo_escola, modo_download, porta_sdk "
-                "FROM jobs WHERE status IN ('novo','erro')"
-            ).fetchall()
-        for job in jobs:
-            try:
-                processar_job(job)
-            except Exception as erro:
-                print(f"[job {job[0]}] falhou: {erro}")
-                with banco_lock:
-                    banco.execute("UPDATE jobs SET status='erro' WHERE id=?", (job[0],))
-                    banco.commit()
-        time.sleep(INTERVALO_CICLO_SEGUNDOS)
+        try:
+            preparar_banco()
+            worker_state["status"] = "executando"
+            worker_state["erro"] = None
+            worker_state["atualizado_em"] = datetime.now(timezone.utc).isoformat()
+            with banco_lock:
+                jobs = banco.execute(
+                    "SELECT id, dvr_ip, usuario, senha, cameras, data_inicio, data_fim, "
+                    "escola, codigo_escola, modo_download, porta_sdk "
+                    "FROM jobs WHERE status IN ('novo','erro')"
+                ).fetchall()
+            for job in jobs:
+                try:
+                    processar_job(job)
+                except Exception as erro:
+                    detalhe = f"Falha no trabalhador: {erro}"
+                    print(f"[job {job[0]}] {detalhe}")
+                    traceback.print_exc()
+                    with banco_lock:
+                        banco.execute(
+                            "UPDATE jobs SET status='erro', erro_detalhe=? WHERE id=?",
+                            (detalhe, job[0]),
+                        )
+                        banco.commit()
+        except Exception as erro:
+            worker_state["status"] = "erro"
+            worker_state["erro"] = str(erro)
+            worker_state["atualizado_em"] = datetime.now(timezone.utc).isoformat()
+            print(f"[worker] falha na rodada: {erro}")
+            traceback.print_exc()
+        finally:
+            time.sleep(INTERVALO_CICLO_SEGUNDOS)
 
 
 # ---------------------------------------------------------------------------
@@ -848,7 +956,8 @@ def listar_jobs():
     with banco_lock:
         jobs = banco.execute(
             "SELECT id, dvr_ip, escola, codigo_escola, cameras, data_inicio, data_fim, "
-            "status, criado_em, iniciado_em, modo_download, porta_sdk "
+            "status, criado_em, iniciado_em, modo_download, porta_sdk, erro_detalhe, "
+            "finalizado_em, protocolo_ativo "
             "FROM jobs ORDER BY id DESC"
         ).fetchall()
         resultado = []
@@ -870,7 +979,10 @@ def listar_jobs():
                 inicio_download = datetime.fromisoformat(j[9].replace("Z", "+00:00"))
                 if inicio_download.tzinfo is None:
                     inicio_download = inicio_download.replace(tzinfo=timezone.utc)
-                tempo_segundos = max(0, int((datetime.now(timezone.utc) - inicio_download).total_seconds()))
+                fim_download = datetime.fromisoformat(j[13].replace("Z", "+00:00")) if j[13] else datetime.now(timezone.utc)
+                if fim_download.tzinfo is None:
+                    fim_download = fim_download.replace(tzinfo=timezone.utc)
+                tempo_segundos = max(0, int((fim_download - inicio_download).total_seconds()))
             velocidade = bytes_baixados / tempo_segundos if tempo_segundos else 0
             restante = max(0, int((bytes_total - bytes_baixados) / velocidade)) if (velocidade and bytes_total > bytes_baixados) else 0
             arquivos = banco.execute(
@@ -883,6 +995,8 @@ def listar_jobs():
                 "cameras": j[4], "data_inicio": j[5], "data_fim": j[6], "status": j[7],
                 "criado_em": j[8], "iniciado_em": j[9], "modo_download": j[10] or "auto",
                 "porta_sdk": j[11] or 8000,
+                "erro_detalhe": j[12], "finalizado_em": j[13],
+                "protocolo_ativo": j[14],
                 "tempo_segundos": tempo_segundos,
                 "segundos_restantes": restante, "bytes_por_segundo": int(velocidade),
                 "trechos_total": total, "trechos_concluidos": concluidos or 0,
@@ -904,6 +1018,11 @@ def listar_jobs():
                 ],
             })
     return jsonify(resultado)
+
+
+@app.route("/api/health", methods=["GET"])
+def saude_aplicacao():
+    return jsonify(worker_state)
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])

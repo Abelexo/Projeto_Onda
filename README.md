@@ -7,7 +7,7 @@ Aplicação web em Python para baixar, cortar e converter gravações de câmera
 1. Você acessa a página no navegador e preenche um formulário com o IP da câmera, usuário, senha, número das câmeras e o intervalo de tempo que deseja baixar.
 2. O servidor inicia o download automaticamente. Ele tenta primeiro pelo SDK da Hikvision (porta 8000) e, se não funcionar, cai automaticamente para ISAPI (porta 80 via HTTP).
 3. Você acompanha o andamento em tempo real pela barra de progresso na página.
-4. Quando o download termina, o vídeo é cortado no intervalo exato que você pediu e convertido para um formato assistível.
+4. Quando o download termina, o vídeo é cortado no intervalo exato. O sistema tenta primeiro manter o codec original sem recodificar; se isso não for aceito pelo FFmpeg, usa H.264 como fallback para o navegador.
 5. O vídeo fica disponível para reprodução direto na página.
 
 ## Requisitos
@@ -40,18 +40,58 @@ sudo apt install gstreamer1.0-tools python3-gi python3-gst-1.0
 
 O projeto precisa ser iniciado pelo terminal. Não há executável de duplo-clique.
 
-```bash
-# Instale as dependências Python
-pip install -r requirements.txt
+Use o script de setup ou o ambiente virtual do projeto:
 
-# Inicie o servidor
-python app.py
+```bash
+./setup_and_run.sh
+```
+
+Execucao manual:
+
+```bash
+.venv/bin/python app.py
 ```
 
 Depois abra o navegador em: `http://127.0.0.1:5000`
 
 Se estiver acessando de outro computador na mesma rede:
 `http://IP_DA_MAQUINA:5000`
+
+## Execucao atual no notebook/Linux
+
+Enquanto o projeto estiver sendo executado neste computador/notebook, use o
+ambiente virtual local:
+
+```bash
+.venv/bin/python app.py
+```
+
+O processo precisa continuar aberto para o trabalhador continuar baixando. A
+interface pode ser acessada em `http://localhost:5000` ou pelo IP da máquina
+na rede local.
+
+Para salvar diretamente em uma pasta compartilhada da empresa, essa pasta
+precisa estar montada no Linux. Depois defina `DVR_APP_DESTINO` antes de
+iniciar o app:
+
+```bash
+export DVR_APP_DESTINO="/mnt/servidor_gravacoes/local"
+.venv/bin/python app.py
+```
+
+O caminho `/mnt/servidor_gravacoes/local` é apenas um exemplo. A montagem SMB
+deve ser feita pelo sistema operacional com uma conta que tenha permissão de
+leitura e gravação. Um endereço Windows como `\\192.168.1.20\local` não deve
+ser usado diretamente pelo Python no Linux sem antes ser montado.
+
+No Windows, o equivalente poderá ser um caminho UNC:
+
+```powershell
+$env:DVR_APP_DESTINO = "\\192.168.1.20\local"
+.venv\Scripts\python.exe app.py
+```
+
+O app cria dentro desse destino as pastas por data, código, escola e câmera.
 
 ## Estrutura dos arquivos
 
@@ -75,7 +115,7 @@ projeto-onda/
 
 ## Observações
 
-- O banco de dados SQLite (`gravacoes.db`) é criado automaticamente na primeira execução.
+- O banco de dados SQLite (`dvr_app.db`) é criado automaticamente na primeira execução.
 - Os vídeos baixados ficam salvos na pasta `gravacoes/` dentro do projeto.
 - O servidor continua baixando mesmo que você feche o navegador — enquanto `app.py` estiver rodando no terminal.
 
@@ -84,11 +124,29 @@ projeto-onda/
 O repositório agora inclui dois **scripts de instalação** que automatizam:
 
 1. Verificação da presença do Python
-2. Criação/ativação de um *virtual environment* (`venv`)
+2. Criação do ambiente virtual `.venv`
 3. Instalação das dependências listadas em `requirements.txt`
-4. Pergunta interativa onde armazenar os vídeos baixados
-5. Inicia o servidor Flask e exibe a URL de acesso
+4. Verificação de FFmpeg, GStreamer e SDK
+5. Pergunta interativa onde armazenar os vídeos baixados
+6. Verifica se a porta 5000 já está ocupada
+7. Inicia o servidor Flask e exibe a URL de acesso
 
 - **Windows** – execute `setup_and_run.ps1` no PowerShell (execute `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` se necessário).
-- **Linux/macOS** – torne o script executável (`chmod +x setup_and_run.sh`) e rode `./setup_and_run.sh`.
+- **Linux/macOS/notebook** – torne o script executável (`chmod +x setup_and_run.sh`) e rode `./setup_and_run.sh`.
+
+Os scripts não enviam bancos, gravações ou arquivos temporários para o GitHub.
+Eles criam o ambiente `.venv`, instalam `requirements.txt`, verificam FFmpeg,
+GStreamer e o SDK e detectam se a porta 5000 já está em uso.
+
+## Testes
+
+O arquivo `testes_download.ipynb` contém testes seguros dos contratos de
+cancelamento do SDK e do ISAPI, sem credenciais reais. O teste final na DVR
+deve ser feito com uma câmera e um intervalo curto em cada modo:
+
+- `SDK`: porta 8000 e DLLs Hikvision instaladas.
+- `ISAPI`: porta 80, sem depender do SDK.
+
+O modo automático tenta SDK e usa ISAPI como fallback. O painel mostra o
+estado do trabalhador e o detalhe de erros de busca ou de processamento.
 

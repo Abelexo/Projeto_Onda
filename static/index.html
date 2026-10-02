@@ -23,7 +23,8 @@
     button:hover { background:var(--accent-dark); }
     button:disabled { opacity:.6; cursor:wait; }
     #mensagem { min-height:24px; color:var(--muted); margin:12px 0 0; font-family:system-ui,sans-serif; font-size:.9rem; }
-    .job { border-top:1px solid var(--line); padding:15px 0; display:grid; grid-template-columns:1fr auto; gap:12px; }
+    .job { border-top:1px solid var(--line); padding:15px 0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; }
+    .job > div { min-width:0; }
     .job:first-child { border-top:0; padding-top:0; }
     .job strong { display:block; font-size:1.08rem; }
     .job small { color:var(--muted); font-family:system-ui,sans-serif; }
@@ -33,9 +34,13 @@
     .status[data-status="convertendo"] { color:#245b78; background:#d9edf7; }
     .status[data-status="cancelado"] { color:#5f6368; background:#e5e7e9; }
     .status[data-status="sem_gravacoes"] { color:#6b5a26; background:#f5edc8; }
-    .progress-label { display:flex; justify-content:space-between; gap:12px; margin-top:12px; color:var(--muted); font:700 .75rem system-ui,sans-serif; }
+    .job-time { display:block; overflow-wrap:anywhere; }
+    .progress-label { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; margin-top:12px; color:var(--muted); font:700 .75rem system-ui,sans-serif; }
+    .progress-label span { min-width:0; overflow-wrap:anywhere; }
     progress { width:100%; height:10px; accent-color:var(--accent); }
     .job-error { color:var(--danger); font: .85rem system-ui,sans-serif; margin:8px 0 0; }
+    .worker-health { margin:0 0 12px; color:var(--muted); font:600 .78rem system-ui,sans-serif; }
+    .worker-health.erro { color:var(--danger); }
     .videos { margin-top:14px; font-family:system-ui,sans-serif; }
     .videos summary { color:var(--accent-dark); cursor:pointer; font-weight:700; }
     .video-item { border-top:1px solid var(--line); margin-top:10px; padding-top:10px; }
@@ -62,12 +67,13 @@
     <section>
       <h2>Novo download</h2>
       <form id="formulario">
+        <label for="codigo_escola">Codigo escola</label>
+        <input id="codigo_escola" name="codigo_escola" required placeholder="3140">
         <label for="dvr_ip">Endereco da DVR</label>
         <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10">
         <label for="escola">Nome da escola</label>
         <input id="escola" name="escola" placeholder="Escola central">
         <div class="row">
-          <div><label for="codigo_escola">Codigo escola</label><input id="codigo_escola" name="codigo_escola" required placeholder="3140"></div>
           <div><label for="porta_sdk">Porta SDK</label><input id="porta_sdk" name="porta_sdk" type="number" placeholder="8000" value="8000"></div>
         </div>
         <div class="row">
@@ -94,6 +100,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h2 style="margin:0;">Atividade recente</h2>
       </div>
+      <p id="saude" class="worker-health">Verificando trabalhador...</p>
       <div class="filtros">
         <button type="button" class="btn-filtro ativo" data-filtro="todos">Todos</button>
         <button type="button" class="btn-filtro" data-filtro="ativos">Em andamento</button>
@@ -108,10 +115,12 @@
   const formulario = document.querySelector('#formulario');
   const mensagem = document.querySelector('#mensagem');
   const jobs = document.querySelector('#jobs');
+  const saude = document.querySelector('#saude');
   const campo = nome => document.querySelector('#' + nome).value.trim();
   const fusoEmpresa = 'America/Sao_Paulo';
   let todosJobs = [];
   let filtroAtual = 'todos';
+  let estadoWorker = null;
 
   const iso = valor => new Date(`${valor}:00-03:00`).toISOString().replace('.000Z', 'Z');
   const formatBytes = valor => {
@@ -137,6 +146,7 @@
   };
 
   function renderizarJobs() {
+    const detalhesAbertos = new Set([...jobs.querySelectorAll('details[data-job-id][open]')].map(item => item.dataset.jobId));
     let lista = todosJobs;
     if (filtroAtual === 'ativos') {
       lista = todosJobs.filter(j => ['novo', 'buscando', 'baixando', 'convertendo', 'aguardando_conexao'].includes(j.status));
@@ -152,14 +162,15 @@
     }
 
     jobs.innerHTML = lista.map(job => `<article class="job">
-      <div><strong>${job.escola || job.dvr_ip}</strong><small>${job.dvr_ip} | codigo ${job.codigo_escola || '-'} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}</strong><br>${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}<br>${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
+      <div><strong>${job.escola || job.dvr_ip}</strong><small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong><span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
       <div class="progress-label"><span>${formatBytes(job.bytes_baixados)} / ${formatBytes(job.bytes_total)} (${job.progresso_percentual}%)</span><span>${formatSpeed(job.bytes_por_segundo)}</span></div>
       <progress max="100" value="${job.progresso_percentual}"></progress>
       <small>Tempo: ${formatDuration(job.tempo_segundos)} | Restante estimado: ${formatDuration(job.segundos_restantes)}</small>
       ${job.trecho_atual ? `<div class="progress-label"><span>Trecho atual: camera ${job.camera_atual}</span><span>${job.status === 'erro' ? 'verificar' : job.status}</span></div>` : ''}
       ${job.erro_atual ? `<p class="job-error">Falha: ${job.erro_atual}</p>` : ''}
+      ${job.erro_detalhe ? `<p class="job-error">Detalhe: ${job.erro_detalhe}</p>` : ''}
       ${job.status === 'sem_gravacoes' ? '<p class="job-error" style="color:#6b5a26">Nenhuma gravacao encontrada. Confira IP, camera, data e fuso horario da DVR.</p>' : ''}
-      ${job.arquivos && job.arquivos.length ? `<details class="videos"><summary>Ver gravacoes (${job.arquivos.length})</summary>${job.arquivos.map(arquivo => `<div class="video-item"><small>Camera ${arquivo.camera} - ${arquivo.nome}</small><video controls preload="none" src="${arquivo.url}"></video></div>`).join('')}</details>` : ''}
+      ${job.arquivos && job.arquivos.length ? `<details class="videos" data-job-id="${job.id}"><summary>Ver gravacoes (${job.arquivos.length})</summary>${job.arquivos.map(arquivo => `<div class="video-item"><small>Camera ${arquivo.camera} - ${arquivo.nome}</small><video controls preload="none" src="${arquivo.url}"></video></div>`).join('')}</details>` : ''}
       <div style="display:flex; gap:8px; align-items:center;">
         ${!['concluido', 'cancelado', 'sem_gravacoes'].includes(job.status) ? `<button class="cancelar" type="button" data-job-id="${job.id}">Cancelar download</button>` : ''}
         ${['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(job.status) ? `<button class="excluir" type="button" data-job-id="${job.id}">Remover da lista</button>` : ''}
@@ -167,14 +178,23 @@
       </div>
       <span class="status" data-status="${job.status}">${job.status}</span>
     </article>`).join('');
+    detalhesAbertos.forEach(jobId => {
+      const detalhe = jobs.querySelector(`details[data-job-id="${jobId}"]`);
+      if (detalhe) detalhe.open = true;
+    });
   }
 
   async function atualizarJobs() {
     try {
-      const resposta = await fetch('/api/jobs');
-      todosJobs = await resposta.json();
+      const [respostaJobs, respostaSaude] = await Promise.all([fetch('/api/jobs'), fetch('/api/health')]);
+      todosJobs = await respostaJobs.json();
+      estadoWorker = await respostaSaude.json();
+      saude.textContent = estadoWorker.erro ? `Trabalhador com erro: ${estadoWorker.erro}` : `Trabalhador: ${estadoWorker.status}`;
+      saude.classList.toggle('erro', Boolean(estadoWorker.erro));
       renderizarJobs();
     } catch (erro) {
+      saude.textContent = 'Trabalhador indisponivel.';
+      saude.classList.add('erro');
       jobs.innerHTML = '<p class="empty">Servidor indisponivel.</p>';
     }
   }

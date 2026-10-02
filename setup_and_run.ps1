@@ -1,50 +1,68 @@
-#!/usr/bin/env pwsh
-# setup_and_run.ps1 – Instalador + verificador rápido para Windows PowerShell
-# ---------------------------------------------------------------
-# 1. Verifica se o Python está instalado
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "Python não encontrado no PATH. Por favor, instale Python 3.10+ e adicione ao PATH antes de continuar." -ForegroundColor Red
+$ErrorActionPreference = "Stop"
+
+$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $ProjectRoot
+
+$pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+if (-not $pythonCommand) {
+    Write-Host "Python 3.10+ nao encontrado no PATH." -ForegroundColor Red
     exit 1
 }
 
-# 2. Cria um ambiente virtual (venv) se ainda não existir
-$venvPath = "venv"
-if (-not (Test-Path $venvPath)) {
-    Write-Host "Criando ambiente virtual..."
-    python -m venv $venvPath
-    if ($LASTEXITCODE -ne 0) { Write-Host "Falha ao criar venv" -ForegroundColor Red; exit 1 }
+$venvPath = Join-Path $ProjectRoot ".venv"
+$venvPython = Join-Path $venvPath "Scripts\python.exe"
+if (-not (Test-Path $venvPython)) {
+    Write-Host "Criando ambiente virtual .venv..." -ForegroundColor Cyan
+    & python -m venv $venvPath
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao criar .venv" }
 }
 
-# 3. Ativa o venv
-$activateScript = Join-Path $venvPath "Scripts\activate.ps1"
-if (Test-Path $activateScript) {
-    . $activateScript
+Write-Host "Atualizando pip e instalando dependencias..." -ForegroundColor Cyan
+& $venvPython -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "Falha ao atualizar pip" }
+& $venvPython -m pip install -r (Join-Path $ProjectRoot "requirements.txt")
+if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar requirements.txt" }
+
+$ffmpegLocal = Join-Path $ProjectRoot "ffmpeg.exe"
+$ffmpegPath = Get-Command ffmpeg -ErrorAction SilentlyContinue
+if (-not $ffmpegPath -and -not (Test-Path $ffmpegLocal)) {
+    Write-Host "AVISO: FFmpeg nao encontrado. O corte/conversao falhara." -ForegroundColor Yellow
+    Write-Host "Instale FFmpeg e coloque ffmpeg.exe no PATH ou na raiz do projeto." -ForegroundColor Yellow
 } else {
-    Write-Host "Não foi possível encontrar o script de ativação. Abortando." -ForegroundColor Red
-    exit 1
+    Write-Host "FFmpeg encontrado." -ForegroundColor Green
 }
 
-# 4. Instala dependências Python
-Write-Host "Instalando dependências via pip..."
-pip install -r requirements.txt
-if ($LASTEXITCODE -ne 0) { Write-Host "Instalação de dependências falhou" -ForegroundColor Red; exit 1 }
+$sdkDll = Join-Path $ProjectRoot "sdk_dlls\HCNetSDK.dll"
+if (Test-Path $sdkDll) {
+    Write-Host "SDK Hikvision encontrado: porta 8000 disponivel." -ForegroundColor Green
+} else {
+    Write-Host "AVISO: sdk_dlls\HCNetSDK.dll nao encontrado; sera usado ISAPI porta 80." -ForegroundColor Yellow
+}
 
-# 5. Pergunta onde deseja guardar os vídeos (pasta de destino)
-$destinoDefault = "C:\GravacoesOnda"
-$destino = Read-Host "Informe a pasta onde os vídeos serão salvos [$destinoDefault]"
-if ([string]::IsNullOrWhiteSpace($destino)) { $destino = $destinoDefault }
+$defaultDestination = Join-Path $ProjectRoot "gravacoes"
+$destination = Read-Host "Pasta de destino [$defaultDestination]"
+if ([string]::IsNullOrWhiteSpace($destination)) { $destination = $defaultDestination }
+New-Item -ItemType Directory -Force -Path $destination | Out-Null
+$env:DVR_APP_DESTINO = $destination
+$env:DVR_APP_BANCO = Join-Path $ProjectRoot "dvr_app.db"
 
-# cria a pasta caso não exista
-if (-not (Test-Path $destino)) { New-Item -ItemType Directory -Path $destino | Out-Null }
+$portBusy = $false
+try {
+    $portBusy = @(Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction Stop).Count -gt 0
+} catch { $portBusy = $false }
+if ($portBusy) {
+    Write-Host "A porta 5000 ja esta ocupada. O servidor provavelmente ja esta rodando." -ForegroundColor Yellow
+    Write-Host "Acesse http://localhost:5000 ou encerre a instancia anterior antes de tentar novamente."
+    exit 0
+}
 
-# 6. Exporta a variável de ambiente usada pelo app
-$env:DVR_APP_DESTINO = $destino
-Write-Host "Variável DVR_APP_DESTINO definida para: $destino"
+$ip = (Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -notlike "127.*" } |
+    Select-Object -First 1 -ExpandProperty IPAddress)
+Write-Host "Servidor: http://localhost:5000" -ForegroundColor Green
+if ($ip) { Write-Host "Acesso pela rede: http://$ip`:5000" -ForegroundColor Green }
+Write-Host "Destino: $destination" -ForegroundColor Green
+Write-Host "Iniciando app.py. Use Ctrl+C para parar." -ForegroundColor Cyan
 
-# 7. Inicia o servidor Flask
-Write-Host "Iniciando o servidor..."
-python app.py
-
-# 8. Quando o servidor iniciar, ele escuta em 0.0.0.0:5000. Exibe o endereço local.
-# (O próprio app imprime a URL, mas aqui reforçamos a informação)
-Write-Host "Acesse a aplicação no seu navegador via: http://localhost:5000 ou http://<IP_da_Maquina>:5000" -ForegroundColor Green
+& $venvPython (Join-Path $ProjectRoot "app.py")
+exit $LASTEXITCODE

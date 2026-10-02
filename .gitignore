@@ -6,6 +6,7 @@ STATUS_PROJETO.txt
 MANUAL_FRONTEND_E_DOWNLOADS.txt
 GITIGNORE_GUIDE.txt
 EXPLANATION.txt
+testes_download.ipynb
 
 # Banco de dados (dados sensiveis)
 *.db
@@ -15,6 +16,14 @@ EXPLANATION.txt
 
 # Arquivos de teste
 teste_dvr.py
+500
+
+# Gravacoes e arquivos brutos gerados durante a execucao
+gravacoes/
+Cameras_Baixadas/
+*.mp4
+*.hik
+*.parcial
 
 # Ambiente Python
 venv/
@@ -39,3 +48,6 @@ dist/
 # Credenciais
 *.pem
 *.key
+
+# Bibliotecas proprietarias do SDK
+sdk_dlls/
