@@ -49,8 +49,7 @@ dist/
 *.pem
 *.key
 
-# Bibliotecas proprietarias do SDK
-sdk_dlls/
+
 
 # FFmpeg (baixado automaticamente pelo setup_and_run.ps1)
 ffmpeg.exe
