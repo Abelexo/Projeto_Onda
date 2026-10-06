@@ -342,13 +342,11 @@ def baixar_um_trecho(
     atualizar_progresso=None, checar_cancelado=None
 ):
     """
-    Baixa um trecho de gravação da DVR.
-    
+    Baixa um trecho de gravação da DVR via ISAPI HTTP (porta 80).
+
     Estratégia:
-      1. Tenta baixar via RTSP Playback com recorte de tempo (porta 554).
-         Baixa direto apenas os minutos pedidos (~35 MB em vez de 1 GB).
-      2. Tenta downloadRequest ISAPI com playbackURI recortada.
-      3. Fallback: Download do bloco físico com Range/retomada.
+      1. Tenta downloadRequest ISAPI com playbackURI recortada no tempo.
+      2. Fallback: Download do bloco físico com Range/retomada.
     """
     parcial = destino + ".parcial"
     ja_baixado = os.path.getsize(parcial) if os.path.exists(parcial) else 0
@@ -359,91 +357,53 @@ def baixar_um_trecho(
 
     sucesso = False
 
-    # 1. Tentativa via RTSP Playback direto por tempo se houver FFmpeg
-    ffmpeg_bin = shutil.which("ffmpeg") or (
-        os.path.isfile("ffmpeg.exe") and os.path.abspath("ffmpeg.exe")
-    ) or (
-        os.path.isfile("ffmpeg") and os.path.abspath("ffmpeg")
-    )
-
-    if ffmpeg_bin and data_inicio_pedido and data_fim_pedido and camera:
+    # Download via ISAPI HTTP (porta 80)
+    uris_para_tentar = []
+    if data_inicio_pedido and data_fim_pedido and camera:
         t_ini = formatar_tempo_isapi_compacto(data_inicio_pedido)
         t_fim = formatar_tempo_isapi_compacto(data_fim_pedido)
-        # Formato de URL RTSP de reprodução por tempo aceito por Hikvision e JFL
-        rtsp_url = f"rtsp://{usuario}:{senha}@{dvr_ip}:554/Streaming/tracks/{camera}01?starttime={t_ini}&endtime={t_fim}"
-        cmd_rtsp = [
-            ffmpeg_bin, "-y", "-rtsp_transport", "tcp",
-            "-i", rtsp_url,
-            "-c", "copy",
-            "-movflags", "+faststart",
-            parcial
-        ]
+        uri_recortada = f"rtsp://{dvr_ip}/Streaming/tracks/{camera}01/?starttime={t_ini}&endtime={t_fim}"
+        uris_para_tentar.append((uri_recortada, True))
+
+    uris_para_tentar.append((uri, False))
+
+    for uri_alvo, eh_tentativa_corte in uris_para_tentar:
+        corpo = (
+            '<downloadRequest version="1.0" '
+            'xmlns="http://www.isapi.org/ver20/XMLSchema">'
+            f"<playbackURI>{escape(uri_alvo)}</playbackURI></downloadRequest>"
+        ).encode("utf-8")
+
+        cabecalhos = {"Content-Type": "application/xml"}
+        if ja_baixado > 0 and not eh_tentativa_corte:
+            cabecalhos["Range"] = f"bytes={ja_baixado}-"
+
         try:
-            processo_rtsp = subprocess.Popen(
-                cmd_rtsp, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            while processo_rtsp.poll() is None:
-                if checar_cancelado and checar_cancelado():
-                    processo_rtsp.terminate()
-                    processo_rtsp.wait(timeout=10)
-                    raise DownloadCancelado()
-                time.sleep(0.5)
-            res_rtsp = processo_rtsp
-            if res_rtsp.returncode == 0 and os.path.isfile(parcial) and os.path.getsize(parcial) > 1024 * 10:
-                sucesso = True
-        except DownloadCancelado:
-            raise
-        except Exception:
-            pass
-
-    # 2. Tentativas via ISAPI HTTP
-    if not sucesso:
-        uris_para_tentar = []
-        if data_inicio_pedido and data_fim_pedido and camera:
-            t_ini = formatar_tempo_isapi_compacto(data_inicio_pedido)
-            t_fim = formatar_tempo_isapi_compacto(data_fim_pedido)
-            uri_recortada = f"rtsp://{dvr_ip}/Streaming/tracks/{camera}01/?starttime={t_ini}&endtime={t_fim}"
-            uris_para_tentar.append((uri_recortada, True))
-
-        uris_para_tentar.append((uri, False))
-
-        for uri_alvo, eh_tentativa_corte in uris_para_tentar:
-            corpo = (
-                '<downloadRequest version="1.0" '
-                'xmlns="http://www.isapi.org/ver20/XMLSchema">'
-                f"<playbackURI>{escape(uri_alvo)}</playbackURI></downloadRequest>"
-            ).encode("utf-8")
-
-            cabecalhos = {"Content-Type": "application/xml"}
-            if ja_baixado > 0 and not eh_tentativa_corte:
-                cabecalhos["Range"] = f"bytes={ja_baixado}-"
-
-            try:
-                with requests.post(
-                    f"http://{dvr_ip}/ISAPI/ContentMgmt/download",
-                    data=corpo, headers=cabecalhos, auth=auth,
-                    stream=True, timeout=60,
-                ) as resp:
-                    if eh_tentativa_corte and resp.status_code not in (200, 206):
-                        continue
-
-                    if resp.status_code not in (200, 206):
-                        resp.raise_for_status()
-
-                    modo = "ab" if resp.status_code == 206 else "wb"
-                    with open(parcial, modo) as f:
-                        for bloco in resp.iter_content(1024 * 1024):
-                            if checar_cancelado and checar_cancelado():
-                                raise DownloadCancelado()
-                            f.write(bloco)
-                            if atualizar_progresso:
-                                atualizar_progresso(f.tell())
-                    sucesso = True
-                    break
-            except requests.exceptions.RequestException:
-                if eh_tentativa_corte:
+            with requests.post(
+                f"http://{dvr_ip}/ISAPI/ContentMgmt/download",
+                data=corpo, headers=cabecalhos, auth=auth,
+                stream=True, timeout=60,
+            ) as resp:
+                if eh_tentativa_corte and resp.status_code not in (200, 206):
                     continue
-                raise
+
+                if resp.status_code not in (200, 206):
+                    resp.raise_for_status()
+
+                modo = "ab" if resp.status_code == 206 else "wb"
+                with open(parcial, modo) as f:
+                    for bloco in resp.iter_content(1024 * 1024):
+                        if checar_cancelado and checar_cancelado():
+                            raise DownloadCancelado()
+                        f.write(bloco)
+                        if atualizar_progresso:
+                            atualizar_progresso(f.tell())
+                sucesso = True
+                break
+        except requests.exceptions.RequestException:
+            if eh_tentativa_corte:
+                continue
+            raise
 
     if not sucesso:
         raise RuntimeError("Nao foi possivel baixar o trecho da DVR")

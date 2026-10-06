@@ -51,3 +51,10 @@ dist/
 
 # Bibliotecas proprietarias do SDK
 sdk_dlls/
+
+# FFmpeg (baixado automaticamente pelo setup_and_run.ps1)
+ffmpeg.exe
+ffprobe.exe
+ffplay.exe
+ffmpeg-release-essentials.zip
+_ffmpeg_tmp/

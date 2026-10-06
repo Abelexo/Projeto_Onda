@@ -22,19 +22,26 @@ Aplicação web em Python para baixar, cortar e converter gravações de câmera
 
 ### Dependências de sistema (instalar separadamente)
 
-O projeto precisa de FFmpeg ou GStreamer para cortar e converter os vídeos.
-Sem um deles, o download funciona mas o arquivo final não é gerado.
+O projeto precisa de **FFmpeg** ou **GStreamer** para cortar e converter os vídeos. Sem um deles, o download funciona, mas o arquivo final não será gerado.
 
-**Linux (Ubuntu/Debian):**
+#### Linux (Ubuntu/Debian)
 ```bash
-sudo apt install ffmpeg
-# ou GStreamer como alternativa:
-sudo apt install gstreamer1.0-tools python3-gi python3-gst-1.0
+sudo apt update
+sudo apt install -y ffmpeg
+# ou, como alternativa, instale o GStreamer:
+sudo apt install -y gstreamer1.0-tools python3-gi python3-gst-1.0
 ```
 
-**Windows:**
-- Instale o FFmpeg: https://ffmpeg.org/download.html
-- Para o modo SDK (porta 8000): instale o SDK oficial da Hikvision (HCNetSDK.dll)
+#### Windows
+- **FFmpeg** – baixe o pacote estático em https://ffmpeg.org/download.html (Escolha *Windows* → *ffmpeg‑release‑full.7z* ou *zip*). Extraia a pasta e **adicione o diretório `bin` ao `PATH`** do Windows.
+- **SDK da Hikvision (HCNetSDK.dll)** – o SDK é distribuído pela própria Hikvision e requer registro no portal de desenvolvedores. Para usar o modo SDK:
+  1. Acesse https://developer.hikvision.com/ e faça login.
+  2. Baixe o *HCNetSDK* correspondente à sua arquitetura (geralmente `x64`).
+  3. Crie a pasta `sdk_dlls` na raiz do projeto (`Projeto_Onda/sdk_dlls`).
+  4. Copie o arquivo `HCNetSDK.dll` (ou `libhcnetsdk.so` para Linux) para essa pasta.
+  5. Opcional: execute o script `setup_and_run.ps1`/`setup_and_run.sh`, que verificará a presença da DLL e mostrará um aviso caso ela não esteja presente.
+
+> **Importante:** O SDK da Hikvision é uma biblioteca proprietária; por isso não pode ser redistribuído automaticamente por este projeto. O usuário deve fazer o download manualmente seguindo as etapas acima.
 
 ## Como rodar
 

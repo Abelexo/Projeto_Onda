@@ -26,8 +26,31 @@ if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar requirements.txt" }
 $ffmpegLocal = Join-Path $ProjectRoot "ffmpeg.exe"
 $ffmpegPath = Get-Command ffmpeg -ErrorAction SilentlyContinue
 if (-not $ffmpegPath -and -not (Test-Path $ffmpegLocal)) {
-    Write-Host "AVISO: FFmpeg nao encontrado. O corte/conversao falhara." -ForegroundColor Yellow
-    Write-Host "Instale FFmpeg e coloque ffmpeg.exe no PATH ou na raiz do projeto." -ForegroundColor Yellow
+    Write-Host "FFmpeg nao encontrado. Baixando automaticamente..." -ForegroundColor Cyan
+    $ffmpegZipUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+    $ffmpegZip = Join-Path $ProjectRoot "ffmpeg-release-essentials.zip"
+    $ffmpegTmp = Join-Path $ProjectRoot "_ffmpeg_tmp"
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $ffmpegZipUrl -OutFile $ffmpegZip -UseBasicParsing
+        Write-Host "Extraindo ffmpeg.exe..." -ForegroundColor Cyan
+        Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegTmp -Force
+        # Procura ffmpeg.exe dentro do zip (pode estar em subpasta)
+        $ffmpegExe = Get-ChildItem -Path $ffmpegTmp -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+        if ($ffmpegExe) {
+            Copy-Item $ffmpegExe.FullName $ffmpegLocal -Force
+            Write-Host "FFmpeg instalado com sucesso em: $ffmpegLocal" -ForegroundColor Green
+        } else {
+            Write-Host "AVISO: ffmpeg.exe nao encontrado dentro do zip." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "AVISO: Falha ao baixar FFmpeg automaticamente: $_" -ForegroundColor Yellow
+        Write-Host "Baixe manualmente em https://www.gyan.dev/ffmpeg/builds/ e coloque ffmpeg.exe na raiz do projeto." -ForegroundColor Yellow
+    } finally {
+        # Limpa arquivos temporarios
+        if (Test-Path $ffmpegZip) { Remove-Item $ffmpegZip -Force }
+        if (Test-Path $ffmpegTmp) { Remove-Item $ffmpegTmp -Recurse -Force }
+    }
 } else {
     Write-Host "FFmpeg encontrado." -ForegroundColor Green
 }
