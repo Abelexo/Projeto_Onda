@@ -68,11 +68,15 @@
       <h2>Novo download</h2>
       <form id="formulario">
         <label for="codigo_escola">Codigo escola</label>
-        <input id="codigo_escola" name="codigo_escola" required placeholder="3140">
+        <input id="codigo_escola" name="codigo_escola" list="lista_codigos" required placeholder="3140" autocomplete="off">
+        <datalist id="lista_codigos"></datalist>
+
+        <label for="escola">Nome da escola</label>
+        <input id="escola" name="escola" list="lista_nomes" placeholder="Escola central" autocomplete="off">
+        <datalist id="lista_nomes"></datalist>
+
         <label for="dvr_ip">Endereco da DVR</label>
         <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10">
-        <label for="escola">Nome da escola</label>
-        <input id="escola" name="escola" placeholder="Escola central">
         <div class="row">
           <div><label for="porta_sdk">Porta SDK</label><input id="porta_sdk" name="porta_sdk" type="number" placeholder="8000" value="8000"></div>
         </div>
@@ -235,6 +239,64 @@
     if (botaoExcluir) excluirJob(botaoExcluir.dataset.jobId);
   });
 
+  const inputCodigo = document.querySelector('#codigo_escola');
+  const inputEscola = document.querySelector('#escola');
+  const inputIp = document.querySelector('#dvr_ip');
+  const listaCodigos = document.querySelector('#lista_codigos');
+  const listaNomes = document.querySelector('#lista_nomes');
+  let mapaEscolasPorCodigo = new Map();
+  let mapaEscolasPorNome = new Map();
+
+  async function carregarCatalogoEscolas() {
+    try {
+      const res = await fetch('/api/escolas');
+      if (!res.ok) return;
+      const lista = await res.json();
+      mapaEscolasPorCodigo.clear();
+      mapaEscolasPorNome.clear();
+      listaCodigos.innerHTML = '';
+      listaNomes.innerHTML = '';
+
+      lista.forEach(item => {
+        mapaEscolasPorCodigo.set(item.codigo, item);
+        mapaEscolasPorNome.set(item.nome.toLowerCase(), item);
+
+        const optCod = document.createElement('option');
+        optCod.value = item.codigo;
+        optCod.label = `${item.nome}${item.cidade ? ' (' + item.cidade + ')' : ''}`;
+        listaCodigos.appendChild(optCod);
+
+        const optNome = document.createElement('option');
+        optNome.value = item.nome;
+        optNome.label = `Cod: ${item.codigo}${item.cidade ? ' - ' + item.cidade : ''}`;
+        listaNomes.appendChild(optNome);
+      });
+    } catch (e) {
+      console.warn('Falha ao carregar lista de escolas:', e);
+    }
+  }
+
+  function aplicarEscola(item) {
+    if (!item) return;
+    if (item.codigo && inputCodigo.value !== item.codigo) inputCodigo.value = item.codigo;
+    if (item.nome && inputEscola.value !== item.nome) inputEscola.value = item.nome;
+    if (item.dvr_ip && !inputIp.value) inputIp.value = item.dvr_ip;
+  }
+
+  inputCodigo.addEventListener('input', () => {
+    const cod = inputCodigo.value.trim();
+    if (mapaEscolasPorCodigo.has(cod)) {
+      aplicarEscola(mapaEscolasPorCodigo.get(cod));
+    }
+  });
+
+  inputEscola.addEventListener('input', () => {
+    const nm = inputEscola.value.trim().toLowerCase();
+    if (mapaEscolasPorNome.has(nm)) {
+      aplicarEscola(mapaEscolasPorNome.get(nm));
+    }
+  });
+
   formulario.addEventListener('submit', async evento => {
     evento.preventDefault();
     const botao = document.querySelector('#enviar'); botao.disabled = true; mensagem.textContent = 'Enviando...';
@@ -256,11 +318,14 @@
       };
       const resposta = await fetch('/api/jobs', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dados) });
       const retorno = await resposta.json(); if (!resposta.ok) throw new Error(retorno.erro || 'Falha ao criar download');
-      mensagem.textContent = 'Download adicionado. O trabalhador vai iniciar em seguida.'; formulario.reset(); document.querySelector('#usuario').value = 'admin'; await atualizarJobs();
+      mensagem.textContent = 'Download adicionado. O trabalhador vai iniciar em seguida.'; formulario.reset(); document.querySelector('#usuario').value = 'admin'; 
+      await carregarCatalogoEscolas();
+      await atualizarJobs();
     } catch (erro) { mensagem.textContent = erro.message; }
     finally { botao.disabled = false; }
   });
 
+  carregarCatalogoEscolas();
   atualizarJobs(); setInterval(atualizarJobs, 5000);
 </script>
 </body>

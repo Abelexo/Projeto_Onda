@@ -57,3 +57,9 @@ ffprobe.exe
 ffplay.exe
 ffmpeg-release-essentials.zip
 _ffmpeg_tmp/
+
+# SDK e dados locais
+sdk_dlls/
+data_all_sheets.json
+escolas.json
+

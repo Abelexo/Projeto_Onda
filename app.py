@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse, parse_qs
 from xml.sax.saxutils import escape
+import json
 import xml.etree.ElementTree as ET
 
 # Garante que gi/GStreamer possam ser importados pelo ambiente virtual (.venv)
@@ -101,6 +102,15 @@ worker_state = {
 
 def preparar_banco():
     with banco_lock:
+        banco.execute("""
+            CREATE TABLE IF NOT EXISTS escolas (
+                codigo TEXT PRIMARY KEY,
+                nome TEXT NOT NULL,
+                dvr_ip TEXT DEFAULT '',
+                cidade TEXT DEFAULT '',
+                atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         banco.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,6 +223,30 @@ def preparar_banco():
                     "WHERE dvr_ip=? AND camera=? AND nome_trecho=?",
                     (dvr_ip, camera, nome_trecho),
                 )
+        
+        # Popula escolas a partir de data_all_sheets.json ou escolas.json se estiver vazio
+        total_escolas = banco.execute("SELECT COUNT(*) FROM escolas").fetchone()[0]
+        if total_escolas == 0:
+            pasta_raiz = os.path.dirname(os.path.abspath(__file__))
+            for nome_json in ("data_all_sheets.json", "escolas.json"):
+                caminho_json = os.path.join(pasta_raiz, nome_json)
+                if os.path.isfile(caminho_json):
+                    try:
+                        with open(caminho_json, "r", encoding="utf-8") as fj:
+                            lista = json.load(fj)
+                            for item in lista:
+                                cod = str(item.get("codigo_do_local") or item.get("codigo") or "").strip()
+                                nm = str(item.get("nome") or "").strip()
+                                cid = str(item.get("cidade_do_local") or item.get("cidade") or "").strip()
+                                if cod and nm:
+                                    banco.execute(
+                                        "INSERT OR IGNORE INTO escolas (codigo, nome, cidade) VALUES (?, ?, ?)",
+                                        (cod, nm, cid)
+                                    )
+                        banco.commit()
+                        break
+                    except Exception as e:
+                        print(f"Aviso: nao foi possivel carregar escolas de {nome_json}: {e}")
         banco.commit()
 
 
@@ -912,10 +946,63 @@ def criar_job():
              dados["data_inicio"], dados["data_fim"], dados.get("escola", ""),
              dados.get("codigo_escola", ""), modo_download, porta_sdk),
         )
+        
+        # Atualiza o IP da escola na tabela escolas caso tenha codigo informado
+        cod_escola = str(dados.get("codigo_escola", "")).strip()
+        nome_escola = str(dados.get("escola", "")).strip()
+        dvr_ip = str(dados.get("dvr_ip", "")).strip()
+        if cod_escola:
+            banco.execute("""
+                INSERT INTO escolas (codigo, nome, dvr_ip, atualizado_em)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(codigo) DO UPDATE SET
+                    nome=CASE WHEN ? != '' THEN ? ELSE nome END,
+                    dvr_ip=CASE WHEN ? != '' THEN ? ELSE dvr_ip END,
+                    atualizado_em=CURRENT_TIMESTAMP
+            """, (cod_escola, nome_escola or cod_escola, dvr_ip, nome_escola, nome_escola, dvr_ip, dvr_ip))
+
         banco.commit()
         job_id = cursor.lastrowid
 
     return jsonify({"id": job_id, "status": "novo"}), 201
+
+
+@app.route("/api/escolas", methods=["GET"])
+def buscar_escolas():
+    termo = request.args.get("q", "").strip()
+    with banco_lock:
+        if termo:
+            linhas = banco.execute(
+                "SELECT codigo, nome, dvr_ip, cidade FROM escolas "
+                "WHERE codigo LIKE ? OR nome LIKE ? OR cidade LIKE ? "
+                "ORDER BY nome ASC LIMIT 50",
+                (f"%{termo}%", f"%{termo}%", f"%{termo}%")
+            ).fetchall()
+        else:
+            linhas = banco.execute(
+                "SELECT codigo, nome, dvr_ip, cidade FROM escolas ORDER BY nome ASC"
+            ).fetchall()
+    return jsonify([
+        {"codigo": l[0], "nome": l[1], "dvr_ip": l[2] or "", "cidade": l[3] or ""}
+        for l in linhas
+    ])
+
+
+@app.route("/api/escolas/<codigo>", methods=["GET"])
+def obter_escola(codigo):
+    with banco_lock:
+        linha = banco.execute(
+            "SELECT codigo, nome, dvr_ip, cidade FROM escolas WHERE codigo=?",
+            (str(codigo).strip(),)
+        ).fetchone()
+    if not linha:
+        return jsonify({"erro": "Escola nao encontrada"}), 404
+    return jsonify({
+        "codigo": linha[0],
+        "nome": linha[1],
+        "dvr_ip": linha[2] or "",
+        "cidade": linha[3] or ""
+    })
 
 
 @app.route("/api/jobs", methods=["GET"])
