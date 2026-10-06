@@ -39,6 +39,38 @@ class NET_DVR_DEVICEINFO_V30(Structure):
         ("byRes", c_byte * 10)
     ]
 
+class NET_DVR_USER_LOGIN_INFO(Structure):
+    _fields_ = [
+        ("sDeviceAddress", c_byte * 129),
+        ("byUseTransport", c_byte),
+        ("wPort", c_short),
+        ("sUserName", c_byte * 64),
+        ("sPassword", c_byte * 64),
+        ("cbLoginResult", ctypes.c_void_p),
+        ("pUser", ctypes.c_void_p),
+        ("bUseAsynLogin", c_int),
+        ("byProxyType", c_byte),
+        ("byUseUTCTime", c_byte),
+        ("byLoginMode", c_byte),
+        ("byHttps", c_byte),
+        ("iAuthType", c_int),
+        ("byRes3", c_byte * 120)
+    ]
+
+class NET_DVR_DEVICEINFO_V40(Structure):
+    _fields_ = [
+        ("struDeviceV30", NET_DVR_DEVICEINFO_V30),
+        ("bySupportLock", c_byte),
+        ("byRetryLoginTime", c_byte),
+        ("byPasswordLevel", c_byte),
+        ("byProxyType", c_byte),
+        ("dwSurplusLockTime", c_int),
+        ("byCharEncodeType", c_byte),
+        ("bySupportDevUrl", c_byte),
+        ("bySupport", c_byte),
+        ("byRes", c_byte * 248)
+    ]
+
 class NET_DVR_TIME(Structure):
     _fields_ = [
         ("dwYear", c_int),
@@ -103,6 +135,10 @@ def carregar_sdk():
         _sdk.NET_DVR_Login_V30.argtypes = [c_char_p, c_int, c_char_p, c_char_p, ctypes.POINTER(NET_DVR_DEVICEINFO_V30)]
         _sdk.NET_DVR_Login_V30.restype = c_int
 
+        if hasattr(_sdk, "NET_DVR_Login_V40"):
+            _sdk.NET_DVR_Login_V40.argtypes = [ctypes.POINTER(NET_DVR_USER_LOGIN_INFO), ctypes.POINTER(NET_DVR_DEVICEINFO_V40)]
+            _sdk.NET_DVR_Login_V40.restype = c_int
+
         _sdk.NET_DVR_Logout_V30.argtypes = [c_int]
         _sdk.NET_DVR_Logout_V30.restype = c_int
 
@@ -142,6 +178,43 @@ def carregar_sdk():
 def sdk_disponivel():
     return carregar_sdk()
 
+def _fazer_login(dvr_ip, porta, usuario, senha):
+    user_id = -1
+    # 1. Tenta NET_DVR_Login_V40 (método oficial e moderno da Hikvision para firmwares novos)
+    if hasattr(_sdk, "NET_DVR_Login_V40"):
+        login_info = NET_DVR_USER_LOGIN_INFO()
+        login_info.bUseAsynLogin = 0  # Síncrono
+        login_info.wPort = int(porta)
+        
+        # Copia bytes para os buffers
+        ip_bytes = dvr_ip.encode('utf-8')
+        for i, b in enumerate(ip_bytes[:128]):
+            login_info.sDeviceAddress[i] = b
+            
+        usr_bytes = usuario.encode('utf-8')
+        for i, b in enumerate(usr_bytes[:63]):
+            login_info.sUserName[i] = b
+            
+        pwd_bytes = senha.encode('utf-8')
+        for i, b in enumerate(pwd_bytes[:63]):
+            login_info.sPassword[i] = b
+
+        dev_info_v40 = NET_DVR_DEVICEINFO_V40()
+        user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+        if user_id >= 0:
+            return user_id
+
+    # 2. Fallback para NET_DVR_Login_V30 (método clássico para DVRs mais antigos)
+    info_v30 = NET_DVR_DEVICEINFO_V30()
+    user_id = _sdk.NET_DVR_Login_V30(
+        dvr_ip.encode('utf-8'),
+        int(porta),
+        usuario.encode('utf-8'),
+        senha.encode('utf-8'),
+        byref(info_v30)
+    )
+    return user_id
+
 def baixar_por_tempo_sdk(dvr_ip, porta, usuario, senha, camera, inicio_dt, fim_dt, caminho_destino, callback_progresso=None, checar_cancelado=None):
     """
     Realiza o download de uma faixa de tempo usando a porta 8000 via HCNetSDK.
@@ -151,14 +224,7 @@ def baixar_por_tempo_sdk(dvr_ip, porta, usuario, senha, camera, inicio_dt, fim_d
         raise RuntimeError("DLL/biblioteca do SDK da Hikvision/JFL nao encontrada (pasta sdk_dlls).")
 
     print(f"[SDK] Conectando em {dvr_ip}:{porta} (porta SDK)...")
-    info = NET_DVR_DEVICEINFO_V30()
-    user_id = _sdk.NET_DVR_Login_V30(
-        dvr_ip.encode('utf-8'),
-        int(porta),
-        usuario.encode('utf-8'),
-        senha.encode('utf-8'),
-        byref(info)
-    )
+    user_id = _fazer_login(dvr_ip, porta, usuario, senha)
 
     if user_id < 0:
         erro = _sdk.NET_DVR_GetLastError()
