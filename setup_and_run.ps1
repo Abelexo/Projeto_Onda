@@ -65,8 +65,24 @@ if (Test-Path $sdkDll) {
 $defaultDestination = Join-Path $ProjectRoot "gravacoes"
 $destination = Read-Host "Pasta de destino [$defaultDestination]"
 if ([string]::IsNullOrWhiteSpace($destination)) { $destination = $defaultDestination }
-New-Item -ItemType Directory -Force -Path $destination | Out-Null
-$env:DVR_APP_DESTINO = $destination
+
+# Validate the path (UNC or local) before using it
+$validPath = $true
+if ($destination -like "\\\\*") {
+    if (-not (Test-Path $destination)) {
+        Write-Host "AVISO: O caminho UNC \"$destination\" não está acessível. Verifique a conexão e as permissões." -ForegroundColor Yellow
+        $validPath = $false
+    }
+}
+if ($validPath) {
+    # Cria a pasta caso ainda não exista
+    New-Item -ItemType Directory -Force -Path $destination | Out-Null
+    $env:DVR_APP_DESTINO = $destination
+} else {
+    Write-Host "Usando pasta padrão: $defaultDestination" -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force -Path $defaultDestination | Out-Null
+    $env:DVR_APP_DESTINO = $defaultDestination
+}
 $env:DVR_APP_BANCO = Join-Path $ProjectRoot "dvr_app.db"
 
 $portBusy = $false
