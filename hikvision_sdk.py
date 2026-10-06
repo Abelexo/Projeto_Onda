@@ -116,8 +116,20 @@ def carregar_sdk():
         _sdk.NET_DVR_StopGetFile.restype = c_int
 
         _sdk.NET_DVR_GetLastError.restype = c_int
+        if hasattr(_sdk, "NET_DVR_SetConnectTime"):
+            _sdk.NET_DVR_SetConnectTime.argtypes = [c_int, c_int]
+            _sdk.NET_DVR_SetConnectTime.restype = c_int
+        if hasattr(_sdk, "NET_DVR_SetReconnect"):
+            _sdk.NET_DVR_SetReconnect.argtypes = [c_int, c_int]
+            _sdk.NET_DVR_SetReconnect.restype = c_int
 
         _sdk.NET_DVR_Init()
+        if hasattr(_sdk, "NET_DVR_SetConnectTime"):
+            # Timeout de 5000ms (5s) com 3 tentativas
+            _sdk.NET_DVR_SetConnectTime(5000, 3)
+        if hasattr(_sdk, "NET_DVR_SetReconnect"):
+            _sdk.NET_DVR_SetReconnect(10000, 1)
+
         _sdk_carregado = True
         print("[SDK] HCNetSDK carregado com sucesso na porta 8000.")
         return True
