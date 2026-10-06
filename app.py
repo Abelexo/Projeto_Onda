@@ -269,13 +269,18 @@ def buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id):
     """Busca todas as páginas de resultado e salva cada trecho no banco
     como 'pendente'. Se a DVR cair durante a busca, espera ela voltar e
     continua da página em que parou (não perde o que já foi catalogado)."""
+    
+    # Converte o UTC para o horário local da DVR formatado para ISAPI
+    data_inicio_isapi = horario_dvr_local(data_inicio).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data_fim_isapi = horario_dvr_local(data_fim).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
     posicao = 0
     while True:
         while True:
             try:
                 r = requests.post(
                     f"http://{dvr_ip}/ISAPI/ContentMgmt/search",
-                    data=montar_busca(camera, data_inicio, data_fim, posicao),
+                    data=montar_busca(camera, data_inicio_isapi, data_fim_isapi, posicao),
                     headers={"Content-Type": "application/xml"},
                     auth=auth, timeout=30,
                 )
@@ -300,10 +305,10 @@ def buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id):
 
                 # Calcula o tamanho estimado proporcional para a janela de tempo pedida
                 try:
-                    dt_ini_tr = datetime.fromisoformat(inicio.replace("Z", "+00:00"))
-                    dt_fim_tr = datetime.fromisoformat(fim.replace("Z", "+00:00"))
-                    dt_ini_ped = datetime.fromisoformat(data_inicio.replace("Z", "+00:00"))
-                    dt_fim_ped = datetime.fromisoformat(data_fim.replace("Z", "+00:00"))
+                    dt_ini_tr = datetime.fromisoformat(inicio[:19]) # Remove o 'Z' para ficar naive
+                    dt_fim_tr = datetime.fromisoformat(fim[:19])
+                    dt_ini_ped = horario_dvr_local(data_inicio)
+                    dt_fim_ped = horario_dvr_local(data_fim)
                     dur_bloco = max(1.0, (dt_fim_tr - dt_ini_tr).total_seconds())
                     corte_ini = max(dt_ini_tr, dt_ini_ped)
                     corte_fim = min(dt_fim_tr, dt_fim_ped)
@@ -360,8 +365,10 @@ def baixar_um_trecho(
     # Download via ISAPI HTTP (porta 80)
     uris_para_tentar = []
     if data_inicio_pedido and data_fim_pedido and camera:
-        t_ini = formatar_tempo_isapi_compacto(data_inicio_pedido)
-        t_fim = formatar_tempo_isapi_compacto(data_fim_pedido)
+        data_ini_isapi = horario_dvr_local(data_inicio_pedido).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data_fim_isapi = horario_dvr_local(data_fim_pedido).strftime("%Y-%m-%dT%H:%M:%SZ")
+        t_ini = formatar_tempo_isapi_compacto(data_ini_isapi)
+        t_fim = formatar_tempo_isapi_compacto(data_fim_isapi)
         uri_recortada = f"rtsp://{dvr_ip}/Streaming/tracks/{camera}01/?starttime={t_ini}&endtime={t_fim}"
         uris_para_tentar.append((uri_recortada, True))
 
@@ -429,10 +436,10 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
       - Ao calcular o deslocamento inicial e a duração, cortamos exatamente os minutos
         pedidos (ex: 40 min / ~176 MB) e apagamos o arquivo bruto de 1 GB.
     """
-    dt_ini_tr = datetime.fromisoformat(inicio_trecho.replace("Z", "+00:00"))
-    dt_fim_tr = datetime.fromisoformat(fim_trecho.replace("Z", "+00:00"))
-    dt_ini_ped = datetime.fromisoformat(data_inicio_pedido.replace("Z", "+00:00"))
-    dt_fim_ped = datetime.fromisoformat(data_fim_pedido.replace("Z", "+00:00"))
+    dt_ini_tr = datetime.fromisoformat(inicio_trecho[:19]) # Remove o 'Z' para ficar naive
+    dt_fim_tr = datetime.fromisoformat(fim_trecho[:19])
+    dt_ini_ped = horario_dvr_local(data_inicio_pedido)
+    dt_fim_ped = horario_dvr_local(data_fim_pedido)
 
     # Janela de intersecção entre o trecho baixado e o pedido do usuário
     corte_ini = max(dt_ini_tr, dt_ini_ped)

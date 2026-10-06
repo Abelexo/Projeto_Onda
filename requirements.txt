@@ -1,6 +1,7 @@
 # Dependências Python instaladas via pip
 Flask>=3.0,<4
 requests>=2.31,<3
+tzdata; sys_platform == 'win32'
 
 # Dependências de SISTEMA (instalar separadamente, não via pip):
 #
