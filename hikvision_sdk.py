@@ -42,7 +42,11 @@ ERROS_HIKVISION = {
     14: "Timeout ao executar comando na DVR (NET_DVR_COMMANDTIMEOUT)",
     17: "Parametro invalido na chamada do SDK (NET_DVR_PARAMETER_ERROR)",
     23: "Disco da DVR nao formatado ou com erro (NET_DVR_DISK_ERROR)",
+    29: "Erro ao criar arquivo de gravacao local (NET_DVR_CREATEFILE_ERROR)",
+    30: "Erro ao abrir arquivo para gravacao (NET_DVR_FILEOPENFAIL)",
+    31: "Operacao no arquivo falhou (NET_DVR_OPERNOTFINISH)",
     34: "Nenhum arquivo de gravacao encontrado para o canal/periodo (NET_DVR_NO_RECORDFILE)",
+    41: "Falha ao alocar recursos internos ou inicializar OpenSSL/TLS (NET_DVR_ALLOC_RESOURCE_ERROR)",
     102: "Sessao nao autenticada na DVR (NET_DVR_USER_NOT_SUCC_LOGIN) - login V30/V40 nao foi concluido com sucesso",
 }
 
@@ -90,8 +94,17 @@ class NET_DVR_DEVICEINFO_V30(Structure):
 
 
 class NET_DVR_USER_LOGIN_INFO(Structure):
-    _pack_ = 1
-    # Exatamente 408 bytes conforme especificacao oficial da Hikvision (#pragma pack(1))
+    # ATENÇÃO CRÍTICA: NÃO usar _pack_ = 1 aqui!
+    # No compilador MSVC x64 usado para compilar HCCore.dll e HCNetSDK.dll,
+    # esta estrutura usa alinhamento padrão de 8 bytes (devido aos ponteiros de 64-bit).
+    # Com alinhamento natural, há 4 bytes de padding entre sPassword (offset 260) e cbLoginResult (offset 264).
+    # A DLL interna HCCore.dll espera exatamente 416 bytes (0x1a0) e acessa:
+    #   offset 130 (0x82): wPort
+    #   offset 264 (0x108): cbLoginResult
+    #   offset 272 (0x110): pUser
+    #   offset 280 (0x118): bUseAsynLogin (int32: 0=Sincrono, 1=Assincrono) -> CRITICO: 0 para esperar resposta!
+    #   offset 286 (0x11e): byLoginMode (byte: 0=Private, 1=ISAPI, 2=Self-adaptive)
+    #   offset 287 (0x11f): byHttps (byte: 0=TCP, 1=TLS, 2=Self-adaptive)
     _fields_ = [
         ("sDeviceAddress", c_char * 129),
         ("byUseTransport", c_byte),
@@ -104,11 +117,15 @@ class NET_DVR_USER_LOGIN_INFO(Structure):
         ("byProxyType", c_byte),
         ("byUseUTCTime", c_byte),
         ("byLoginMode", c_byte),        # 0 = Private (8000), 1 = ISAPI (80), 2 = Self-adaptive
-        ("byHttps", c_byte),
+        ("byHttps", c_byte),            # 0 = TCP, 1 = TLS, 2 = Self-adaptive
         ("iProxyID", c_int),
         ("byVerifyMode", c_byte),
-        ("byRes3", c_byte * 119)
+        ("byRes3", c_byte * 123)
     ]
+
+# Validacao em tempo de carga para evitar qualquer divergencia de ABI
+assert ctypes.sizeof(NET_DVR_USER_LOGIN_INFO) == 416, f"NET_DVR_USER_LOGIN_INFO deve ter 416 bytes, obteve {ctypes.sizeof(NET_DVR_USER_LOGIN_INFO)}"
+assert NET_DVR_USER_LOGIN_INFO.bUseAsynLogin.offset == 280, f"bUseAsynLogin deve estar no offset 280, obteve {NET_DVR_USER_LOGIN_INFO.bUseAsynLogin.offset}"
 
 
 class NET_DVR_DEVICEINFO_V40(Structure):
@@ -160,10 +177,11 @@ class NET_DVR_LOCAL_SDK_PATH(Structure):
 
 _sdk = None
 _sdk_carregado = False
+_hccore = None
 
 
 def carregar_sdk():
-    global _sdk, _sdk_carregado
+    global _sdk, _sdk_carregado, _hccore
     if _sdk_carregado:
         return _sdk is not None
 
@@ -242,6 +260,19 @@ def carregar_sdk():
                             ctypes.WinDLL(c_dll)
                         except Exception:
                             pass
+
+            caminho_hccore = os.path.join(diretorio_dll, "HCCore.dll")
+            if os.path.isfile(caminho_hccore):
+                try:
+                    _hccore = ctypes.WinDLL(caminho_hccore)
+                    if hasattr(_hccore, "Core_IsDevLogin"):
+                        _hccore.Core_IsDevLogin.argtypes = [c_int]
+                        _hccore.Core_IsDevLogin.restype = c_int
+                    if hasattr(_hccore, "Core_GetDevLoginRetInfo"):
+                        _hccore.Core_GetDevLoginRetInfo.argtypes = [c_int, POINTER(NET_DVR_DEVICEINFO_V40)]
+                        _hccore.Core_GetDevLoginRetInfo.restype = c_int
+                except Exception as e_hccore:
+                    print(f"[SDK] Aviso ao carregar HCCore.dll: {e_hccore}")
 
             _sdk = ctypes.WinDLL(caminho_encontrado)
         else:
@@ -383,6 +414,33 @@ def _limpar_ip_e_porta(dvr_ip, porta_padrao=8000):
     return ip_limpo, porta
 
 
+def _extrair_info_dispositivo(user_id, dev_info_v40):
+    """
+    Garante que a topologia e informacoes da DVR estejam preenchidas
+    e confirma com o HCCore se a sessao esta efetivamente autenticada.
+    """
+    global _hccore
+    if _hccore and hasattr(_hccore, "Core_IsDevLogin"):
+        # Garante que o Core marcou a sessao como autenticada antes de prosseguir
+        for _ in range(20):
+            if _hccore.Core_IsDevLogin(user_id) == 1:
+                break
+            time.sleep(0.05)
+
+    dev_info = dev_info_v40.struDeviceV30
+    # Se os campos de canais vieram zerados, tenta obter via Core_GetDevLoginRetInfo
+    if dev_info.byChanNum == 0 and dev_info.byIPChanNum == 0 and _hccore and hasattr(_hccore, "Core_GetDevLoginRetInfo"):
+        try:
+            res_info = _hccore.Core_GetDevLoginRetInfo(user_id, byref(dev_info_v40))
+            if res_info == 1:
+                dev_info = dev_info_v40.struDeviceV30
+        except Exception:
+            pass
+
+    serial = bytes(dev_info.sSerialNumber).split(b"\x00")[0].decode("latin1", errors="ignore").strip()
+    return dev_info, serial
+
+
 def _fazer_login(dvr_ip, porta, usuario, senha):
     """
     Autentica na DVR via SDK.
@@ -414,8 +472,8 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
-            dev_info_final = dev_info_v40.struDeviceV30
-            print(f"[SDK] Login V40 privado TLS bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+            dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
+            print(f"[SDK] Login V40 privado TLS bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
@@ -426,8 +484,8 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
-            dev_info_final = dev_info_v40.struDeviceV30
-            print(f"[SDK] Login V40 privado TCP bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+            dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
+            print(f"[SDK] Login V40 privado TCP bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
@@ -439,8 +497,8 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
-            dev_info_final = dev_info_v40.struDeviceV30
-            print(f"[SDK] Login V40 autoadaptativo bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+            dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
+            print(f"[SDK] Login V40 autoadaptativo bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
@@ -457,7 +515,8 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         byref(info_v30)
     )
     if user_id >= 0:
-        print(f"[SDK] Login V30 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+        serial = bytes(info_v30.sSerialNumber).split(b"\x00")[0].decode("latin1", errors="ignore").strip()
+        print(f"[SDK] Login V30 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
         return user_id, info_v30
     else:
         ultimo_erro = _sdk.NET_DVR_GetLastError()
@@ -483,8 +542,9 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
                 ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
                 user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
                 if user_id >= 0:
-                    print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{p_test} (ID: {user_id})")
-                    return user_id, dev_info_v40.struDeviceV30
+                    dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
+                    print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{p_test} (ID: {user_id}, Serial: {serial or 'N/A'})")
+                    return user_id, dev_info_final
             except Exception:
                 pass
 
