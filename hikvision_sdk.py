@@ -132,6 +132,14 @@ class NET_DVR_TIME(Structure):
     ]
 
 
+class NET_DVR_LOCAL_SDK_PATH(Structure):
+    # Usado para registrar os plugins de HCNetSDKCom antes de NET_DVR_Init
+    _fields_ = [
+        ("sPath", c_byte * 256),
+        ("byRes", c_byte * 128)
+    ]
+
+
 _sdk = None
 _sdk_carregado = False
 
@@ -167,12 +175,10 @@ def carregar_sdk():
         return False
 
     try:
+        subpasta_com = os.path.join(diretorio_dll, "HCNetSDKCom")
         if sys.platform == "win32":
             # No Windows, adiciona o diretorio e a subpasta HCNetSDKCom ao PATH e DLL directory
-            os.environ["PATH"] = diretorio_dll + os.pathsep + os.environ.get("PATH", "")
-            subpasta_com = os.path.join(diretorio_dll, "HCNetSDKCom")
-            if os.path.isdir(subpasta_com):
-                os.environ["PATH"] = subpasta_com + os.pathsep + os.environ.get("PATH", "")
+            os.environ["PATH"] = diretorio_dll + os.pathsep + subpasta_com + os.pathsep + os.environ.get("PATH", "")
             if hasattr(os, "add_dll_directory"):
                 try:
                     os.add_dll_directory(diretorio_dll)
@@ -180,6 +186,17 @@ def carregar_sdk():
                         os.add_dll_directory(subpasta_com)
                 except Exception as e_dll:
                     print(f"[SDK] Aviso ao registrar diretorio de DLLs: {e_dll}")
+
+            # Pre-carrega DLLs de suporte de HCNetSDKCom para evitar falha de dependencias
+            if os.path.isdir(subpasta_com):
+                for dll_nome in ("HCCoreDevCfg.dll", "HCGeneralCfgMgr.dll", "HCPlayBack.dll", "StreamTransClient.dll", "SystemTransform.dll"):
+                    c_dll = os.path.join(subpasta_com, dll_nome)
+                    if os.path.isfile(c_dll):
+                        try:
+                            ctypes.WinDLL(c_dll)
+                        except Exception:
+                            pass
+
             _sdk = ctypes.WinDLL(caminho_encontrado)
         else:
             _sdk = ctypes.cdll.LoadLibrary(caminho_encontrado)
@@ -229,6 +246,24 @@ def carregar_sdk():
         if hasattr(_sdk, "NET_DVR_SetReconnect"):
             _sdk.NET_DVR_SetReconnect.argtypes = [c_int, c_int]
             _sdk.NET_DVR_SetReconnect.restype = c_int
+
+        # REGISTRO OBRIGATORIO: NET_DVR_SetSDKInitCfg com caminho da pasta HCNetSDKCom
+        # DEVE SER CHAMADO ANTES DE NET_DVR_Init() para carregar os plugins de autenticacao e playback!
+        if hasattr(_sdk, "NET_DVR_SetSDKInitCfg"):
+            try:
+                _sdk.NET_DVR_SetSDKInitCfg.argtypes = [c_int, ctypes.c_void_p]
+                _sdk.NET_DVR_SetSDKInitCfg.restype = c_int
+
+                sdk_path_cfg = NET_DVR_LOCAL_SDK_PATH()
+                caminho_cfg = subpasta_com if os.path.isdir(subpasta_com) else diretorio_dll
+                c_bytes = caminho_cfg.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
+                ctypes.memmove(sdk_path_cfg.sPath, c_bytes, min(len(c_bytes), 255))
+
+                # NET_SDK_INIT_CFG_SDK_PATH = 2
+                res_cfg = _sdk.NET_DVR_SetSDKInitCfg(2, byref(sdk_path_cfg))
+                print(f"[SDK] NET_DVR_SetSDKInitCfg(SDK_PATH)={caminho_cfg} -> resultado: {res_cfg}")
+            except Exception as e_cfg:
+                print(f"[SDK] Aviso ao configurar NET_DVR_SetSDKInitCfg: {e_cfg}")
 
         _sdk.NET_DVR_Init()
 
@@ -286,39 +321,33 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
     """
     Autentica na DVR via SDK.
     Tenta na seguinte sequencia de compatibilidade:
-      1. NET_DVR_Login_V40 em modo Private (porta 8000 padrao)
-      2. NET_DVR_Login_V30 (modo classico compativel com firmwares anteriores)
-      3. Se a porta for 80 ou houver falha de dados no modo privado, tenta V40 modo ISAPI
+      1. NET_DVR_Login_V40 em modo Private (porta informada)
+      2. NET_DVR_Login_V30 (modo classico)
+      3. NET_DVR_Login_V40 em modo ISAPI (tenta porta 80 e porta informada)
     Retorna uma tupla (user_id, dev_info_v30).
     """
     ip_limpo, porta_num = _limpar_ip_e_porta(dvr_ip, porta)
     ultimo_erro = 0
-    dev_info_final = None
 
-    # 1. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta 8000)
+    # 1. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta informada)
     if hasattr(_sdk, "NET_DVR_Login_V40"):
         login_info = NET_DVR_USER_LOGIN_INFO()
         login_info.bUseAsynLogin = 0
         login_info.wPort = porta_num
         login_info.byLoginMode = 0  # 0 = Private Protocol
 
-        ip_bytes = ip_limpo.encode("utf-8")
-        for i, b in enumerate(ip_bytes[:128]):
-            login_info.sDeviceAddress[i] = b
-
-        usr_bytes = usuario.encode("utf-8")
-        for i, b in enumerate(usr_bytes[:63]):
-            login_info.sUserName[i] = b
-
-        pwd_bytes = senha.encode("utf-8")
-        for i, b in enumerate(pwd_bytes[:63]):
-            login_info.sPassword[i] = b
+        ip_b = ip_limpo.encode("utf-8")
+        ctypes.memmove(login_info.sDeviceAddress, ip_b, min(len(ip_b), 128))
+        usr_b = usuario.encode("utf-8")
+        ctypes.memmove(login_info.sUserName, usr_b, min(len(usr_b), 63))
+        pwd_b = senha.encode("utf-8")
+        ctypes.memmove(login_info.sPassword, pwd_b, min(len(pwd_b), 63))
 
         dev_info_v40 = NET_DVR_DEVICEINFO_V40()
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
             dev_info_final = dev_info_v40.struDeviceV30
-            print(f"[SDK] Login V40 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+            print(f"[SDK] Login V40 privado bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
@@ -341,29 +370,30 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         ultimo_erro = _sdk.NET_DVR_GetLastError()
         print(f"[SDK] Login V30 falhou ({formatar_erro_sdk(ultimo_erro)}).")
 
-    # 3. Fallback adicional para V40 no modo ISAPI (util se a porta for 80 ou se a DVR exigir HTTP)
-    if hasattr(_sdk, "NET_DVR_Login_V40") and porta_num in (80, 8080, 443):
-        try:
-            login_info = NET_DVR_USER_LOGIN_INFO()
-            login_info.bUseAsynLogin = 0
-            login_info.wPort = porta_num
-            login_info.byLoginMode = 1  # 1 = ISAPI
-            ip_bytes = ip_limpo.encode("utf-8")
-            for i, b in enumerate(ip_bytes[:128]):
-                login_info.sDeviceAddress[i] = b
-            usr_bytes = usuario.encode("utf-8")
-            for i, b in enumerate(usr_bytes[:63]):
-                login_info.sUserName[i] = b
-            pwd_bytes = senha.encode("utf-8")
-            for i, b in enumerate(pwd_bytes[:63]):
-                login_info.sPassword[i] = b
-            dev_info_v40 = NET_DVR_DEVICEINFO_V40()
-            user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
-            if user_id >= 0:
-                print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
-                return user_id, dev_info_v40.struDeviceV30
-        except Exception:
-            pass
+    # 3. Fallback adicional para V40 no modo ISAPI (conecta via HTTP/ISAPI na porta 80 caso a porta 8000 seja rejeitada pelo Mikrotik)
+    if hasattr(_sdk, "NET_DVR_Login_V40"):
+        portas_isapi = [80, 8080] if porta_num != 80 else [80]
+        for p_test in portas_isapi:
+            try:
+                print(f"[SDK] Tentando login alternativo V40 ISAPI na porta {p_test}...")
+                login_info = NET_DVR_USER_LOGIN_INFO()
+                login_info.bUseAsynLogin = 0
+                login_info.wPort = p_test
+                login_info.byLoginMode = 1  # 1 = ISAPI
+                ip_b = ip_limpo.encode("utf-8")
+                ctypes.memmove(login_info.sDeviceAddress, ip_b, min(len(ip_b), 128))
+                usr_b = usuario.encode("utf-8")
+                ctypes.memmove(login_info.sUserName, usr_b, min(len(usr_b), 63))
+                pwd_b = senha.encode("utf-8")
+                ctypes.memmove(login_info.sPassword, pwd_b, min(len(pwd_b), 63))
+
+                dev_info_v40 = NET_DVR_DEVICEINFO_V40()
+                user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+                if user_id >= 0:
+                    print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{p_test} (ID: {user_id})")
+                    return user_id, dev_info_v40.struDeviceV30
+            except Exception:
+                pass
 
     return -1, None
 
