@@ -10,7 +10,7 @@ import os
 import sys
 import time
 import ctypes
-from ctypes import c_int, c_char_p, c_byte, c_short, c_ushort, c_uint, Structure, byref, POINTER
+from ctypes import c_int, c_char, c_char_p, c_byte, c_short, c_ushort, c_uint, Structure, byref, POINTER
 from datetime import datetime
 
 # Constantes de controle de reproducao e download do HCNetSDK
