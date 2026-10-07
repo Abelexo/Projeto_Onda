@@ -9,6 +9,8 @@ Compativel com cameras analogicas e cameras IP / ONVIF conectadas a DVRs/NVRs.
 import os
 import sys
 import time
+import shutil
+import tempfile
 import ctypes
 from ctypes import c_int, c_char, c_char_p, c_byte, c_short, c_ushort, c_uint, Structure, byref, POINTER
 from datetime import datetime
@@ -50,7 +52,8 @@ def formatar_erro_sdk(codigo):
 
 
 class NET_DVR_DEVICEINFO_V30(Structure):
-    # Alinhamento nativo C (MSVC/GCC) - exatamente 80 bytes
+    _pack_ = 1
+    # Exatamente 80 bytes conforme especificacao oficial da Hikvision
     _fields_ = [
         ("sSerialNumber", c_byte * 48),  # Numero de serie
         ("byAlarmInPortNum", c_byte),
@@ -87,7 +90,8 @@ class NET_DVR_DEVICEINFO_V30(Structure):
 
 
 class NET_DVR_USER_LOGIN_INFO(Structure):
-    # Alinhamento nativo C (MSVC/GCC) - ponteiros e inteiros com alinhamento natural
+    _pack_ = 1
+    # Exatamente 408 bytes conforme especificacao oficial da Hikvision (#pragma pack(1))
     _fields_ = [
         ("sDeviceAddress", c_char * 129),
         ("byUseTransport", c_byte),
@@ -108,7 +112,8 @@ class NET_DVR_USER_LOGIN_INFO(Structure):
 
 
 class NET_DVR_DEVICEINFO_V40(Structure):
-    # Alinhamento nativo C (MSVC/GCC) - exatamente 344 bytes
+    _pack_ = 1
+    # Exatamente 344 bytes conforme especificacao oficial da Hikvision (#pragma pack(1))
     _fields_ = [
         ("struDeviceV30", NET_DVR_DEVICEINFO_V30),
         ("bySupportLock", c_byte),
@@ -133,20 +138,22 @@ class NET_DVR_DEVICEINFO_V40(Structure):
 
 
 class NET_DVR_TIME(Structure):
+    _pack_ = 1
     _fields_ = [
-        ("dwYear", c_int),
-        ("dwMonth", c_int),
-        ("dwDay", c_int),
-        ("dwHour", c_int),
-        ("dwMinute", c_int),
-        ("dwSecond", c_int)
+        ("dwYear", c_uint),
+        ("dwMonth", c_uint),
+        ("dwDay", c_uint),
+        ("dwHour", c_uint),
+        ("dwMinute", c_uint),
+        ("dwSecond", c_uint)
     ]
 
 
 class NET_DVR_LOCAL_SDK_PATH(Structure):
+    _pack_ = 1
     # Usado para registrar os plugins de HCNetSDKCom antes de NET_DVR_Init
     _fields_ = [
-        ("sPath", c_byte * 256),
+        ("sPath", c_char * 256),
         ("byRes", c_byte * 128)
     ]
 
@@ -301,6 +308,26 @@ def carregar_sdk():
                 # NET_SDK_INIT_CFG_SDK_PATH = 2
                 res_cfg = _sdk.NET_DVR_SetSDKInitCfg(2, byref(sdk_path_cfg))
                 print(f"[SDK] NET_DVR_SetSDKInitCfg(SDK_PATH)={caminho_cfg} -> resultado: {res_cfg}")
+
+                # NET_SDK_INIT_CFG_LIBEAY_PATH = 3 (libcrypto)
+                # NET_SDK_INIT_CFG_SSLEAY_PATH = 4 (libssl)
+                caminho_crypto = os.path.join(diretorio_dll, "libcrypto-1_1-x64.dll")
+                if not os.path.isfile(caminho_crypto):
+                    caminho_crypto = os.path.join(diretorio_dll, "libcrypto.dll")
+                if os.path.isfile(caminho_crypto):
+                    b_crypto = caminho_crypto.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
+                    buf_crypto = ctypes.create_string_buffer(b_crypto)
+                    res_crypto = _sdk.NET_DVR_SetSDKInitCfg(3, ctypes.cast(buf_crypto, ctypes.c_void_p))
+                    print(f"[SDK] NET_DVR_SetSDKInitCfg(LIBEAY_PATH)={caminho_crypto} -> resultado: {res_crypto}")
+
+                caminho_ssl = os.path.join(diretorio_dll, "libssl-1_1-x64.dll")
+                if not os.path.isfile(caminho_ssl):
+                    caminho_ssl = os.path.join(diretorio_dll, "libssl.dll")
+                if os.path.isfile(caminho_ssl):
+                    b_ssl = caminho_ssl.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
+                    buf_ssl = ctypes.create_string_buffer(b_ssl)
+                    res_ssl = _sdk.NET_DVR_SetSDKInitCfg(4, ctypes.cast(buf_ssl, ctypes.c_void_p))
+                    print(f"[SDK] NET_DVR_SetSDKInitCfg(SSLEAY_PATH)={caminho_ssl} -> resultado: {res_ssl}")
             except Exception as e_cfg:
                 print(f"[SDK] Aviso ao configurar NET_DVR_SetSDKInitCfg: {e_cfg}")
 
@@ -358,35 +385,20 @@ def _limpar_ip_e_porta(dvr_ip, porta_padrao=8000):
 
 def _fazer_login(dvr_ip, porta, usuario, senha):
     """
-    Autentica na DVR via SDK na porta 8000.
+    Autentica na DVR via SDK.
     Tenta na seguinte sequencia de compatibilidade:
-      1. NET_DVR_Login_V30 (modo classico, direto e 100% sincrono)
-      2. NET_DVR_Login_V40 em modo Private
-      3. NET_DVR_Login_V40 em modo Self-adaptive
+      1. NET_DVR_Login_V40 em modo Private com TLS adaptativo (porta 8000)
+      2. NET_DVR_Login_V40 em modo Private sem TLS (porta 8000)
+      3. NET_DVR_Login_V40 em modo Self-adaptive (como o iVMS-4200 negocia com DVRs modernos)
+      4. NET_DVR_Login_V30 (modo classico legado sincrono)
+      5. NET_DVR_Login_V40 em modo ISAPI (porta HTTP 80 caso 8000 esteja bloqueada)
     Retorna uma tupla (user_id, dev_info_v30).
     """
     ip_limpo, porta_num = _limpar_ip_e_porta(dvr_ip, porta)
     ultimo_erro = 0
 
-    # 1. Tentativa NET_DVR_Login_V30 (Padrao clássico mais estavel e 100% sincrono)
-    info_v30 = NET_DVR_DEVICEINFO_V30()
-    ctypes.memset(byref(info_v30), 0, ctypes.sizeof(info_v30))
-    user_id = _sdk.NET_DVR_Login_V30(
-        ip_limpo.encode("utf-8"),
-        porta_num,
-        usuario.encode("utf-8"),
-        senha.encode("utf-8"),
-        byref(info_v30)
-    )
-    if user_id >= 0:
-        print(f"[SDK] Login V30 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
-        return user_id, info_v30
-    else:
-        ultimo_erro = _sdk.NET_DVR_GetLastError()
-        print(f"[SDK] Login V30 retornou {formatar_erro_sdk(ultimo_erro)}. Tentando fallback V40...")
-
-    # 2. Tentativa NET_DVR_Login_V40 (Modo Privado Sincrono)
     if hasattr(_sdk, "NET_DVR_Login_V40"):
+        # 1. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta 8000 com TLS adaptativo)
         login_info = NET_DVR_USER_LOGIN_INFO()
         ctypes.memset(byref(login_info), 0, ctypes.sizeof(login_info))
         login_info.bUseAsynLogin = 0
@@ -403,14 +415,28 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
             dev_info_final = dev_info_v40.struDeviceV30
-            print(f"[SDK] Login V40 privado bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+            print(f"[SDK] Login V40 privado TLS bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
-            print(f"[SDK] Login V40 privado falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando modo autoadaptativo...")
+            print(f"[SDK] Login V40 privado TLS falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando sem TLS...")
+
+        # 2. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta 8000 sem TLS direto)
+        login_info.byHttps = 0      # 0 = Sem TLS
+        ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
+        user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+        if user_id >= 0:
+            dev_info_final = dev_info_v40.struDeviceV30
+            print(f"[SDK] Login V40 privado TCP bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+            return user_id, dev_info_final
+        else:
+            ultimo_erro = _sdk.NET_DVR_GetLastError()
+            print(f"[SDK] Login V40 privado TCP falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando modo autoadaptativo...")
 
         # 3. Tentativa NET_DVR_Login_V40 (Modo 2 = Autoadaptativo, padrao iVMS-4200)
         login_info.byLoginMode = 2  # 2 = Self-adaptive
+        login_info.byHttps = 2
+        ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
             dev_info_final = dev_info_v40.struDeviceV30
@@ -418,7 +444,49 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
-            print(f"[SDK] Login V40 autoadaptativo falhou ({formatar_erro_sdk(ultimo_erro)}).")
+            print(f"[SDK] Login V40 autoadaptativo falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando fallback V30...")
+
+    # 4. Fallback para NET_DVR_Login_V30 (Padrao clássico para DVRs mais antigos)
+    info_v30 = NET_DVR_DEVICEINFO_V30()
+    ctypes.memset(byref(info_v30), 0, ctypes.sizeof(info_v30))
+    user_id = _sdk.NET_DVR_Login_V30(
+        ip_limpo.encode("utf-8"),
+        porta_num,
+        usuario.encode("utf-8"),
+        senha.encode("utf-8"),
+        byref(info_v30)
+    )
+    if user_id >= 0:
+        print(f"[SDK] Login V30 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+        return user_id, info_v30
+    else:
+        ultimo_erro = _sdk.NET_DVR_GetLastError()
+        print(f"[SDK] Login V30 retornou {formatar_erro_sdk(ultimo_erro)}.")
+
+    # 5. Fallback adicional para V40 no modo ISAPI (conecta via HTTP/ISAPI na porta 80 caso a porta 8000 seja bloqueada no roteador/Mikrotik)
+    if hasattr(_sdk, "NET_DVR_Login_V40"):
+        portas_isapi = [80, 8080] if porta_num != 80 else [80]
+        for p_test in portas_isapi:
+            try:
+                print(f"[SDK] Tentando login alternativo V40 ISAPI na porta {p_test}...")
+                login_info = NET_DVR_USER_LOGIN_INFO()
+                ctypes.memset(byref(login_info), 0, ctypes.sizeof(login_info))
+                login_info.bUseAsynLogin = 0
+                login_info.wPort = p_test
+                login_info.byLoginMode = 1  # 1 = ISAPI
+                login_info.byHttps = 0
+                login_info.sDeviceAddress = ip_limpo.encode("utf-8")[:128]
+                login_info.sUserName = usuario.encode("utf-8")[:63]
+                login_info.sPassword = senha.encode("utf-8")[:63]
+
+                dev_info_v40 = NET_DVR_DEVICEINFO_V40()
+                ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
+                user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+                if user_id >= 0:
+                    print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{p_test} (ID: {user_id})")
+                    return user_id, dev_info_v40.struDeviceV30
+            except Exception:
+                pass
 
     return -1, None
 
@@ -427,8 +495,8 @@ def _determinar_canais_candidatos(camera_solicitada, dev_info):
     """
     Determina os canais SDK a serem tentados.
     Para cameras analogicas e IP / ONVIF conectadas a DVRs ou NVRs:
-      - DVRs analogicas / hibridas: canal analogico 1, 2, 3... e canais digitais (33...).
-      - NVRs (byChanNum == 0): canais digitais comecam em byStartDChan (normalmente 33).
+      - O numero da camera solicitada (ex: 1) é SEMPRE a prioridade máxima!
+      - Em NVRs e canais IP, testa tambem o deslocamento digital (33, etc).
     Retorna uma lista ordenada sem duplicatas priorizando o canal mais provavel.
     """
     cam_num = int(camera_solicitada)
@@ -446,23 +514,18 @@ def _determinar_canais_candidatos(camera_solicitada, dev_info):
     if dev_info:
         print(f"[SDK] Topologia da DVR: analogicos={chan_num} (inicio {start_chan}), digitais_ip={total_ip}, canal_inicial_ip={start_dchan}")
 
-    # 1. Se a DVR tem canais analogicos e a camera pedida esta dentro da quantidade analogica:
-    if chan_num > 0 and cam_num <= chan_num:
-        canal_analogico = (start_chan + cam_num - 1) if start_chan > 0 else cam_num
-        candidatos.append(canal_analogico)
-        candidatos.append(32 + cam_num)
-        if start_dchan > 0:
-            candidatos.append(start_dchan + cam_num - 1)
-    # 2. Se a DVR for uma NVR pura (sem canais analogicos):
-    elif chan_num == 0 and total_ip > 0:
-        candidatos.append(canal_digital_offset)
-        candidatos.append(cam_num)
-        candidatos.append(32 + cam_num)
-    # 3. Caso geral / topologia nao detectada: prioriza o numero da camera diretamente (ex: 1)
-    else:
-        candidatos.append(cam_num)
-        candidatos.append(canal_digital_offset)
-        candidatos.append(32 + cam_num)
+    # Prioridade 1: testar o canal correspondente a camera pedida (ex: 1)
+    candidatos.append(cam_num)
+
+    # Prioridade 2: canal analogico com offset caso start_chan > 1
+    if chan_num > 0 and start_chan > 1:
+        candidatos.append(start_chan + cam_num - 1)
+
+    # Prioridade 3: canais digitais/IP (ex: 33)
+    candidatos.append(canal_digital_offset)
+    candidatos.append(32 + cam_num)
+    if start_dchan > 0:
+        candidatos.append(start_dchan + cam_num - 1)
 
     # Remove duplicados preservando a ordem de prioridade
     resultado = []
@@ -519,13 +582,16 @@ def baixar_por_tempo_sdk(
     pasta_destino = os.path.dirname(caminho_absoluto)
     os.makedirs(pasta_destino, exist_ok=True)
 
-    # Usa arquivo temporario seguro com nome ASCII para garantir que a DLL
-    # nao tenha problemas com acentos (ex: nomes de escolas com til ou circunflexo)
+    # O arquivo temporario durante o download do SDK e gravado OBRIGATORIAMENTE
+    # no disco local (tempfile.gettempdir(), ex: C:\\Users\\...\\AppData\\Local\\Temp).
+    # Isso impede falhas de escrita caso o destino final seja um compartilhamento de rede UNC
+    # (\\\\172.168.12.3\\...) ou contenha acentos/espacos que a DLL nativa em C/C++ rejeite.
+    pasta_temp_local = tempfile.gettempdir()
     timestamp_tmp = int(time.time())
-    nome_arquivo_temp = f"_tmp_sdk_{timestamp_tmp}_cam{camera}.hik"
-    caminho_arquivo_temp = os.path.join(pasta_destino, nome_arquivo_temp)
+    nome_arquivo_temp = f"hksdk_tmp_{timestamp_tmp}_cam{camera}.hik"
+    caminho_arquivo_temp = os.path.join(pasta_temp_local, nome_arquivo_temp)
 
-    # Converte caminho para 8.3 seguro no Windows
+    # Converte caminho temporario para 8.3 seguro no Windows
     caminho_salvar_sdk = _obter_caminho_curto_win(caminho_arquivo_temp)
     bytes_caminho = caminho_salvar_sdk.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
 
@@ -619,14 +685,14 @@ def baixar_por_tempo_sdk(
 
                 time.sleep(1)
 
-            # Move o arquivo temporario para o destino final definitivo
+            # Move o arquivo temporario da pasta temp local para o destino final definitivo
             if os.path.exists(caminho_arquivo_temp):
                 if os.path.exists(caminho_absoluto):
                     try:
                         os.remove(caminho_absoluto)
                     except OSError:
                         pass
-                os.replace(caminho_arquivo_temp, caminho_absoluto)
+                shutil.move(caminho_arquivo_temp, caminho_absoluto)
                 return True
             else:
                 raise RuntimeError("O arquivo baixado nao foi encontrado no disco apos a conclusao.")
@@ -636,3 +702,8 @@ def baixar_por_tempo_sdk(
 
     finally:
         _sdk.NET_DVR_Logout_V30(user_id)
+        if os.path.exists(caminho_arquivo_temp):
+            try:
+                os.remove(caminho_arquivo_temp)
+            except OSError:
+                pass
