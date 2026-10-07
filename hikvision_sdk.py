@@ -182,20 +182,48 @@ def carregar_sdk():
     try:
         subpasta_com = os.path.join(diretorio_dll, "HCNetSDKCom")
         if sys.platform == "win32":
-            # No Windows, adiciona o diretorio e a subpasta HCNetSDKCom ao PATH e DLL directory
-            os.environ["PATH"] = diretorio_dll + os.pathsep + subpasta_com + os.pathsep + os.environ.get("PATH", "")
-            if hasattr(os, "add_dll_directory"):
-                try:
-                    os.add_dll_directory(diretorio_dll)
-                    if os.path.isdir(subpasta_com):
-                        os.add_dll_directory(subpasta_com)
-                except Exception as e_dll:
-                    print(f"[SDK] Aviso ao registrar diretorio de DLLs: {e_dll}")
+            # Detecta instalacoes do iVMS-4200 para compartilhar DLLs de criptografia (libcrypto, libssl, hpr)
+            pastas_suporte = [diretorio_dll, subpasta_com]
+            bases_prog = [
+                os.environ.get("ProgramFiles", r"C:\Program Files"),
+                os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                r"C:", r"D:",
+            ]
+            for b in bases_prog:
+                for s in [
+                    r"iVMS-4200 Site\iVMS-4200 Client\Client",
+                    r"iVMS-4200\iVMS-4200 Client\Client",
+                    r"iVMS-4200\Client",
+                ]:
+                    p = os.path.join(b, s)
+                    if os.path.isdir(p) and p not in pastas_suporte:
+                        pastas_suporte.append(p)
+                        sub_ivms_com = os.path.join(p, "HCNetSDKCom")
+                        if os.path.isdir(sub_ivms_com) and sub_ivms_com not in pastas_suporte:
+                            pastas_suporte.append(sub_ivms_com)
 
-            # Pre-carrega DLLs de suporte de HCNetSDKCom para evitar falha de dependencias
-            if os.path.isdir(subpasta_com):
-                for dll_nome in ("HCCoreDevCfg.dll", "HCGeneralCfgMgr.dll", "HCPlayBack.dll", "StreamTransClient.dll", "SystemTransform.dll"):
-                    c_dll = os.path.join(subpasta_com, dll_nome)
+            for p_dir in pastas_suporte:
+                if os.path.isdir(p_dir):
+                    os.environ["PATH"] = p_dir + os.pathsep + os.environ.get("PATH", "")
+                    if hasattr(os, "add_dll_directory"):
+                        try:
+                            os.add_dll_directory(p_dir)
+                        except Exception:
+                            pass
+
+            # Pre-carrega DLLs de criptografia e suporte essenciais para login moderno
+            dlls_criticas = (
+                "libcrypto-1_1-x64.dll", "libcrypto-1_1.dll", "libcrypto.dll",
+                "libssl-1_1-x64.dll", "libssl-1_1.dll", "libssl.dll",
+                "hpr.dll", "HCCore.dll", "PlayCtrl.dll",
+                "HCCoreDevCfg.dll", "HCGeneralCfgMgr.dll", "HCPlayBack.dll",
+                "StreamTransClient.dll", "SystemTransform.dll"
+            )
+            for p_dir in pastas_suporte:
+                if not os.path.isdir(p_dir):
+                    continue
+                for dll_nome in dlls_criticas:
+                    c_dll = os.path.join(p_dir, dll_nome)
                     if os.path.isfile(c_dll):
                         try:
                             ctypes.WinDLL(c_dll)
@@ -324,11 +352,11 @@ def _limpar_ip_e_porta(dvr_ip, porta_padrao=8000):
 
 def _fazer_login(dvr_ip, porta, usuario, senha):
     """
-    Autentica na DVR via SDK.
+    Autentica na DVR via SDK na porta 8000.
     Tenta na seguinte sequencia de compatibilidade:
       1. NET_DVR_Login_V40 em modo Private (porta informada)
-      2. NET_DVR_Login_V30 (modo classico)
-      3. NET_DVR_Login_V40 em modo ISAPI (tenta porta 80 e porta informada)
+      2. NET_DVR_Login_V40 em modo Self-adaptive (como o iVMS-4200 negocia com DVRs modernos)
+      3. NET_DVR_Login_V30 (modo classico)
     Retorna uma tupla (user_id, dev_info_v30).
     """
     ip_limpo, porta_num = _limpar_ip_e_porta(dvr_ip, porta)
@@ -340,6 +368,7 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         login_info.bUseAsynLogin = 0
         login_info.wPort = porta_num
         login_info.byLoginMode = 0  # 0 = Private Protocol
+        login_info.byHttps = 2      # 2 = Autoadaptativo TLS
 
         login_info.sDeviceAddress = ip_limpo.encode("utf-8")[:128]
         login_info.sUserName = usuario.encode("utf-8")[:63]
@@ -353,9 +382,20 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
-            print(f"[SDK] Login V40 privado falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando fallback V30...")
+            print(f"[SDK] Login V40 privado falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando modo autoadaptativo...")
 
-    # 2. Fallback para NET_DVR_Login_V30 (Classico)
+        # 2. Tentativa NET_DVR_Login_V40 (Modo 2 = Autoadaptativo, padrão iVMS-4200)
+        login_info.byLoginMode = 2  # 2 = Self-adaptive
+        user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+        if user_id >= 0:
+            dev_info_final = dev_info_v40.struDeviceV30
+            print(f"[SDK] Login V40 autoadaptativo bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+            return user_id, dev_info_final
+        else:
+            ultimo_erro = _sdk.NET_DVR_GetLastError()
+            print(f"[SDK] Login V40 autoadaptativo falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando fallback V30...")
+
+    # 3. Fallback para NET_DVR_Login_V30 (Classico)
     info_v30 = NET_DVR_DEVICEINFO_V30()
     user_id = _sdk.NET_DVR_Login_V30(
         ip_limpo.encode("utf-8"),
@@ -371,28 +411,6 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
     else:
         ultimo_erro = _sdk.NET_DVR_GetLastError()
         print(f"[SDK] Login V30 falhou ({formatar_erro_sdk(ultimo_erro)}).")
-
-    # 3. Fallback adicional para V40 no modo ISAPI (conecta via HTTP/ISAPI na porta 80 caso a porta 8000 seja rejeitada pelo Mikrotik)
-    if hasattr(_sdk, "NET_DVR_Login_V40"):
-        portas_isapi = [80, 8080] if porta_num != 80 else [80]
-        for p_test in portas_isapi:
-            try:
-                print(f"[SDK] Tentando login alternativo V40 ISAPI na porta {p_test}...")
-                login_info = NET_DVR_USER_LOGIN_INFO()
-                login_info.bUseAsynLogin = 0
-                login_info.wPort = p_test
-                login_info.byLoginMode = 1  # 1 = ISAPI
-                login_info.sDeviceAddress = ip_limpo.encode("utf-8")[:128]
-                login_info.sUserName = usuario.encode("utf-8")[:63]
-                login_info.sPassword = senha.encode("utf-8")[:63]
-
-                dev_info_v40 = NET_DVR_DEVICEINFO_V40()
-                user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
-                if user_id >= 0:
-                    print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{p_test} (ID: {user_id})")
-                    return user_id, dev_info_v40.struDeviceV30
-            except Exception:
-                pass
 
     return -1, None
 
