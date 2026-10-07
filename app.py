@@ -680,9 +680,13 @@ def baixar_pendentes_do_job(
                 sucesso_download = False
                 if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
                     try:
-                        dt_ini_ped = horario_dvr_local(data_inicio)
-                        dt_fim_ped = horario_dvr_local(data_fim)
-                        print(f"[job {job_id}] Tentando download direto via NetSDK (porta {porta_sdk})...")
+                        try:
+                            dt_ini_ped = horario_dvr_local(inicio_trecho) if inicio_trecho else horario_dvr_local(data_inicio)
+                            dt_fim_ped = horario_dvr_local(fim_trecho) if fim_trecho else horario_dvr_local(data_fim)
+                        except Exception:
+                            dt_ini_ped = horario_dvr_local(data_inicio)
+                            dt_fim_ped = horario_dvr_local(data_fim)
+                        print(f"[job {job_id}] Tentando download direto via NetSDK (porta {porta_sdk}) camera {camera}...")
                         atualizar_status_job("baixando", protocolo="SDK")
 
                         def progresso_sdk(pct):
@@ -938,11 +942,16 @@ def criar_job():
     except (ValueError, TypeError):
         porta_sdk = 8000
 
+    dvr_ip_bruto = str(dados.get("dvr_ip", "")).strip()
+    dvr_ip_limpo, porta_detectada = hikvision_sdk._limpar_ip_e_porta(dvr_ip_bruto, porta_sdk)
+    if "porta_sdk" not in dados or not dados["porta_sdk"]:
+        porta_sdk = porta_detectada
+
     with banco_lock:
         cursor = banco.execute(
             "INSERT INTO jobs (dvr_ip, usuario, senha, cameras, data_inicio, data_fim, escola, codigo_escola, modo_download, porta_sdk) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (dados["dvr_ip"], dados["usuario"], dados["senha"], dados["cameras"],
+            (dvr_ip_limpo, dados["usuario"], dados["senha"], dados["cameras"],
              dados["data_inicio"], dados["data_fim"], dados.get("escola", ""),
              dados.get("codigo_escola", ""), modo_download, porta_sdk),
         )
@@ -950,7 +959,7 @@ def criar_job():
         # Atualiza o IP da escola na tabela escolas caso tenha codigo informado
         cod_escola = str(dados.get("codigo_escola", "")).strip()
         nome_escola = str(dados.get("escola", "")).strip()
-        dvr_ip = str(dados.get("dvr_ip", "")).strip()
+        dvr_ip = dvr_ip_limpo
         if cod_escola:
             banco.execute("""
                 INSERT INTO escolas (codigo, nome, dvr_ip, atualizado_em)
