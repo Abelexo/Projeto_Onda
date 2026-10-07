@@ -49,8 +49,9 @@ def formatar_erro_sdk(codigo):
 
 
 class NET_DVR_DEVICEINFO_V30(Structure):
+    _pack_ = 1
     _fields_ = [
-        ("sSerialNumber", c_byte * 48),
+        ("sSerialNumber", c_char * 48),
         ("byAlarmInPortNum", c_byte),
         ("byAlarmOutPortNum", c_byte),
         ("byDiskNum", c_byte),
@@ -78,12 +79,13 @@ class NET_DVR_DEVICEINFO_V30(Structure):
 
 
 class NET_DVR_USER_LOGIN_INFO(Structure):
+    _pack_ = 1
     _fields_ = [
-        ("sDeviceAddress", c_byte * 129),
+        ("sDeviceAddress", c_char * 129),
         ("byUseTransport", c_byte),
         ("wPort", c_ushort),
-        ("sUserName", c_byte * 64),
-        ("sPassword", c_byte * 64),
+        ("sUserName", c_char * 64),
+        ("sPassword", c_char * 64),
         ("cbLoginResult", ctypes.c_void_p),
         ("pUser", ctypes.c_void_p),
         ("bUseAsynLogin", c_int),       # 0 = Sincrono
@@ -97,7 +99,8 @@ class NET_DVR_USER_LOGIN_INFO(Structure):
 
 
 class NET_DVR_DEVICEINFO_V40(Structure):
-    # Exatamente 352 bytes conforme especificacao oficial da Hikvision
+    _pack_ = 1
+    # Alinhamento exato conforme especificacao oficial da Hikvision com #pragma pack(1)
     _fields_ = [
         ("struDeviceV30", NET_DVR_DEVICEINFO_V30),
         ("bySupportLock", c_byte),
@@ -122,6 +125,7 @@ class NET_DVR_DEVICEINFO_V40(Structure):
 
 
 class NET_DVR_TIME(Structure):
+    _pack_ = 1
     _fields_ = [
         ("dwYear", c_int),
         ("dwMonth", c_int),
@@ -133,6 +137,7 @@ class NET_DVR_TIME(Structure):
 
 
 class NET_DVR_LOCAL_SDK_PATH(Structure):
+    _pack_ = 1
     # Usado para registrar os plugins de HCNetSDKCom antes de NET_DVR_Init
     _fields_ = [
         ("sPath", c_byte * 256),
@@ -336,12 +341,9 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         login_info.wPort = porta_num
         login_info.byLoginMode = 0  # 0 = Private Protocol
 
-        ip_b = ip_limpo.encode("utf-8")
-        ctypes.memmove(login_info.sDeviceAddress, ip_b, min(len(ip_b), 128))
-        usr_b = usuario.encode("utf-8")
-        ctypes.memmove(login_info.sUserName, usr_b, min(len(usr_b), 63))
-        pwd_b = senha.encode("utf-8")
-        ctypes.memmove(login_info.sPassword, pwd_b, min(len(pwd_b), 63))
+        login_info.sDeviceAddress = ip_limpo.encode("utf-8")[:128]
+        login_info.sUserName = usuario.encode("utf-8")[:63]
+        login_info.sPassword = senha.encode("utf-8")[:63]
 
         dev_info_v40 = NET_DVR_DEVICEINFO_V40()
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
@@ -380,12 +382,9 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
                 login_info.bUseAsynLogin = 0
                 login_info.wPort = p_test
                 login_info.byLoginMode = 1  # 1 = ISAPI
-                ip_b = ip_limpo.encode("utf-8")
-                ctypes.memmove(login_info.sDeviceAddress, ip_b, min(len(ip_b), 128))
-                usr_b = usuario.encode("utf-8")
-                ctypes.memmove(login_info.sUserName, usr_b, min(len(usr_b), 63))
-                pwd_b = senha.encode("utf-8")
-                ctypes.memmove(login_info.sPassword, pwd_b, min(len(pwd_b), 63))
+                login_info.sDeviceAddress = ip_limpo.encode("utf-8")[:128]
+                login_info.sUserName = usuario.encode("utf-8")[:63]
+                login_info.sPassword = senha.encode("utf-8")[:63]
 
                 dev_info_v40 = NET_DVR_DEVICEINFO_V40()
                 user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
