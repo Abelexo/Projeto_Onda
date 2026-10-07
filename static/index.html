@@ -121,12 +121,16 @@
   const jobs = document.querySelector('#jobs');
   const saude = document.querySelector('#saude');
   const campo = nome => document.querySelector('#' + nome).value.trim();
-  const fusoEmpresa = 'America/Sao_Paulo';
+  let fusoEmpresa = 'America/Cuiaba';
+  let fusoOffset = '-04:00';
   let todosJobs = [];
   let filtroAtual = 'todos';
   let estadoWorker = null;
 
-  const iso = valor => new Date(`${valor}:00-03:00`).toISOString().replace('.000Z', 'Z');
+  const iso = valor => {
+    const comOffset = valor.length === 16 ? `${valor}:00${fusoOffset}` : `${valor}${fusoOffset}`;
+    return new Date(comOffset).toISOString().replace('.000Z', 'Z');
+  };
   const formatBytes = valor => {
     if (valor === undefined || valor === null) return '0 KB';
     if (valor >= 1024 * 1024) return `${(valor / 1024 / 1024).toFixed(1)} MB`;
@@ -193,6 +197,14 @@
       const [respostaJobs, respostaSaude] = await Promise.all([fetch('/api/jobs'), fetch('/api/health')]);
       todosJobs = await respostaJobs.json();
       estadoWorker = await respostaSaude.json();
+      if (estadoWorker.fuso) {
+        fusoEmpresa = estadoWorker.fuso;
+        if (fusoEmpresa.includes('Cuiaba') || fusoEmpresa.includes('Campo_Grande') || fusoEmpresa.includes('Manaus') || fusoEmpresa.includes('Porto_Velho')) {
+          fusoOffset = '-04:00';
+        } else if (fusoEmpresa.includes('Sao_Paulo') || fusoEmpresa.includes('Brasilia')) {
+          fusoOffset = '-03:00';
+        }
+      }
       saude.textContent = estadoWorker.erro ? `Trabalhador com erro: ${estadoWorker.erro}` : `Trabalhador: ${estadoWorker.status}`;
       saude.classList.toggle('erro', Boolean(estadoWorker.erro));
       renderizarJobs();

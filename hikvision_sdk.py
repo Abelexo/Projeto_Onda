@@ -41,6 +41,7 @@ ERROS_HIKVISION = {
     17: "Parametro invalido na chamada do SDK (NET_DVR_PARAMETER_ERROR)",
     23: "Disco da DVR nao formatado ou com erro (NET_DVR_DISK_ERROR)",
     34: "Nenhum arquivo de gravacao encontrado para o canal/periodo (NET_DVR_NO_RECORDFILE)",
+    102: "Sessao nao autenticada na DVR (NET_DVR_USER_NOT_SUCC_LOGIN) - login V30/V40 nao foi concluido com sucesso",
 }
 
 def formatar_erro_sdk(codigo):
@@ -49,9 +50,9 @@ def formatar_erro_sdk(codigo):
 
 
 class NET_DVR_DEVICEINFO_V30(Structure):
-    _pack_ = 1
+    # Alinhamento nativo C (MSVC/GCC) - exatamente 80 bytes
     _fields_ = [
-        ("sSerialNumber", c_char * 48),
+        ("sSerialNumber", c_byte * 48),  # Numero de serie
         ("byAlarmInPortNum", c_byte),
         ("byAlarmOutPortNum", c_byte),
         ("byDiskNum", c_byte),
@@ -68,18 +69,25 @@ class NET_DVR_DEVICEINFO_V30(Structure):
         ("bySupport2", c_byte),
         ("wDevType", c_ushort),
         ("bySupport3", c_byte),
-        ("byMultiStream", c_byte),
-        ("wStartDChan", c_ushort),      # Canal digital/IP inicial (ex: 33)
-        ("wStartZeroChan", c_ushort),
-        ("wNetStartChan", c_ushort),
-        ("wNetChanNum", c_ushort),
-        ("wSmartHddNum", c_ushort),
-        ("byRes", c_byte * 10)
+        ("byMultiStreamProto", c_byte),
+        ("byStartDChan", c_byte),       # Canal digital/IP inicial (ex: 33)
+        ("byStartDTalkChan", c_byte),
+        ("byHighDChanNum", c_byte),     # High byte de canais IP (total = byIPChanNum + byHighDChanNum * 256)
+        ("bySupport4", c_byte),
+        ("byLanguageType", c_byte),
+        ("byVoiceInChanNum", c_byte),
+        ("byStartVoiceInChanNo", c_byte),
+        ("bySupport5", c_byte),
+        ("bySupport6", c_byte),
+        ("byMirrorChanNum", c_byte),
+        ("wStartMirrorChanNo", c_ushort),
+        ("bySupport7", c_byte),
+        ("byRes2", c_byte)
     ]
 
 
 class NET_DVR_USER_LOGIN_INFO(Structure):
-    _pack_ = 1
+    # Alinhamento nativo C (MSVC/GCC) - ponteiros e inteiros com alinhamento natural
     _fields_ = [
         ("sDeviceAddress", c_char * 129),
         ("byUseTransport", c_byte),
@@ -88,19 +96,19 @@ class NET_DVR_USER_LOGIN_INFO(Structure):
         ("sPassword", c_char * 64),
         ("cbLoginResult", ctypes.c_void_p),
         ("pUser", ctypes.c_void_p),
-        ("bUseAsynLogin", c_int),       # 0 = Sincrono
+        ("bUseAsynLogin", c_int),       # 0 = Sincrono, 1 = Assincrono
         ("byProxyType", c_byte),
         ("byUseUTCTime", c_byte),
-        ("byLoginMode", c_byte),        # 0 = Private (8000), 1 = ISAPI (80)
+        ("byLoginMode", c_byte),        # 0 = Private (8000), 1 = ISAPI (80), 2 = Self-adaptive
         ("byHttps", c_byte),
         ("iProxyID", c_int),
-        ("byRes3", c_byte * 120)
+        ("byVerifyMode", c_byte),
+        ("byRes3", c_byte * 119)
     ]
 
 
 class NET_DVR_DEVICEINFO_V40(Structure):
-    _pack_ = 1
-    # Alinhamento exato conforme especificacao oficial da Hikvision com #pragma pack(1)
+    # Alinhamento nativo C (MSVC/GCC) - exatamente 344 bytes
     _fields_ = [
         ("struDeviceV30", NET_DVR_DEVICEINFO_V30),
         ("bySupportLock", c_byte),
@@ -125,7 +133,6 @@ class NET_DVR_DEVICEINFO_V40(Structure):
 
 
 class NET_DVR_TIME(Structure):
-    _pack_ = 1
     _fields_ = [
         ("dwYear", c_int),
         ("dwMonth", c_int),
@@ -137,7 +144,6 @@ class NET_DVR_TIME(Structure):
 
 
 class NET_DVR_LOCAL_SDK_PATH(Structure):
-    _pack_ = 1
     # Usado para registrar os plugins de HCNetSDKCom antes de NET_DVR_Init
     _fields_ = [
         ("sPath", c_byte * 256),
@@ -354,17 +360,35 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
     """
     Autentica na DVR via SDK na porta 8000.
     Tenta na seguinte sequencia de compatibilidade:
-      1. NET_DVR_Login_V40 em modo Private (porta informada)
-      2. NET_DVR_Login_V40 em modo Self-adaptive (como o iVMS-4200 negocia com DVRs modernos)
-      3. NET_DVR_Login_V30 (modo classico)
+      1. NET_DVR_Login_V30 (modo classico, direto e 100% sincrono)
+      2. NET_DVR_Login_V40 em modo Private
+      3. NET_DVR_Login_V40 em modo Self-adaptive
     Retorna uma tupla (user_id, dev_info_v30).
     """
     ip_limpo, porta_num = _limpar_ip_e_porta(dvr_ip, porta)
     ultimo_erro = 0
 
-    # 1. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta informada)
+    # 1. Tentativa NET_DVR_Login_V30 (Padrao clássico mais estavel e 100% sincrono)
+    info_v30 = NET_DVR_DEVICEINFO_V30()
+    ctypes.memset(byref(info_v30), 0, ctypes.sizeof(info_v30))
+    user_id = _sdk.NET_DVR_Login_V30(
+        ip_limpo.encode("utf-8"),
+        porta_num,
+        usuario.encode("utf-8"),
+        senha.encode("utf-8"),
+        byref(info_v30)
+    )
+    if user_id >= 0:
+        print(f"[SDK] Login V30 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
+        return user_id, info_v30
+    else:
+        ultimo_erro = _sdk.NET_DVR_GetLastError()
+        print(f"[SDK] Login V30 retornou {formatar_erro_sdk(ultimo_erro)}. Tentando fallback V40...")
+
+    # 2. Tentativa NET_DVR_Login_V40 (Modo Privado Sincrono)
     if hasattr(_sdk, "NET_DVR_Login_V40"):
         login_info = NET_DVR_USER_LOGIN_INFO()
+        ctypes.memset(byref(login_info), 0, ctypes.sizeof(login_info))
         login_info.bUseAsynLogin = 0
         login_info.wPort = porta_num
         login_info.byLoginMode = 0  # 0 = Private Protocol
@@ -375,6 +399,7 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         login_info.sPassword = senha.encode("utf-8")[:63]
 
         dev_info_v40 = NET_DVR_DEVICEINFO_V40()
+        ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
             dev_info_final = dev_info_v40.struDeviceV30
@@ -384,7 +409,7 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
             ultimo_erro = _sdk.NET_DVR_GetLastError()
             print(f"[SDK] Login V40 privado falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando modo autoadaptativo...")
 
-        # 2. Tentativa NET_DVR_Login_V40 (Modo 2 = Autoadaptativo, padrão iVMS-4200)
+        # 3. Tentativa NET_DVR_Login_V40 (Modo 2 = Autoadaptativo, padrao iVMS-4200)
         login_info.byLoginMode = 2  # 2 = Self-adaptive
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         if user_id >= 0:
@@ -393,24 +418,7 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
-            print(f"[SDK] Login V40 autoadaptativo falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando fallback V30...")
-
-    # 3. Fallback para NET_DVR_Login_V30 (Classico)
-    info_v30 = NET_DVR_DEVICEINFO_V30()
-    user_id = _sdk.NET_DVR_Login_V30(
-        ip_limpo.encode("utf-8"),
-        porta_num,
-        usuario.encode("utf-8"),
-        senha.encode("utf-8"),
-        byref(info_v30)
-    )
-    if user_id >= 0:
-        dev_info_final = info_v30
-        print(f"[SDK] Login V30 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id})")
-        return user_id, dev_info_final
-    else:
-        ultimo_erro = _sdk.NET_DVR_GetLastError()
-        print(f"[SDK] Login V30 falhou ({formatar_erro_sdk(ultimo_erro)}).")
+            print(f"[SDK] Login V40 autoadaptativo falhou ({formatar_erro_sdk(ultimo_erro)}).")
 
     return -1, None
 
@@ -418,36 +426,45 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
 def _determinar_canais_candidatos(camera_solicitada, dev_info):
     """
     Determina os canais SDK a serem tentados.
-    Para cameras IP / ONVIF conectadas a DVRs ou NVRs:
-      - NVRs (byChanNum == 0): todos os canais sao IP (comecam em wStartDChan, normalmente 33).
-      - DVRs hibridas com cameras ONVIF: canais digitais comecam em wStartDChan (normalmente 33).
-      - DVRs analogicas puras: canais 1, 2, 3...
-    Retorna uma lista ordenada sem duplicatas com os canais a testar.
+    Para cameras analogicas e IP / ONVIF conectadas a DVRs ou NVRs:
+      - DVRs analogicas / hibridas: canal analogico 1, 2, 3... e canais digitais (33...).
+      - NVRs (byChanNum == 0): canais digitais comecam em byStartDChan (normalmente 33).
+    Retorna uma lista ordenada sem duplicatas priorizando o canal mais provavel.
     """
     cam_num = int(camera_solicitada)
     candidatos = []
 
-    start_dchan = int(getattr(dev_info, "wStartDChan", 0)) if dev_info else 0
+    start_dchan = int(getattr(dev_info, "byStartDChan", 0)) if dev_info else 0
+    start_chan = int(getattr(dev_info, "byStartChan", 1)) if dev_info else 1
     chan_num = int(getattr(dev_info, "byChanNum", 0)) if dev_info else 0
     ip_chan_num = int(getattr(dev_info, "byIPChanNum", 0)) if dev_info else 0
+    high_dchan = int(getattr(dev_info, "byHighDChanNum", 0)) if dev_info else 0
+    total_ip = ip_chan_num + (high_dchan * 256)
 
     canal_digital_offset = (start_dchan + cam_num - 1) if start_dchan > 0 else (32 + cam_num)
 
     if dev_info:
-        print(f"[SDK] Topologia da DVR: analogicos={chan_num}, digitais_ip={ip_chan_num}, canal_inicial_ip={start_dchan}")
+        print(f"[SDK] Topologia da DVR: analogicos={chan_num} (inicio {start_chan}), digitais_ip={total_ip}, canal_inicial_ip={start_dchan}")
 
-    # Se a DVR for NVR (sem canais analogicos) ou possuir canais IP (cameras ONVIF)
-    if chan_num == 0 or ip_chan_num > 0:
-        candidatos.append(canal_digital_offset)
+    # 1. Se a DVR tem canais analogicos e a camera pedida esta dentro da quantidade analogica:
+    if chan_num > 0 and cam_num <= chan_num:
+        canal_analogico = (start_chan + cam_num - 1) if start_chan > 0 else cam_num
+        candidatos.append(canal_analogico)
         candidatos.append(32 + cam_num)
+        if start_dchan > 0:
+            candidatos.append(start_dchan + cam_num - 1)
+    # 2. Se a DVR for uma NVR pura (sem canais analogicos):
+    elif chan_num == 0 and total_ip > 0:
+        candidatos.append(canal_digital_offset)
         candidatos.append(cam_num)
+        candidatos.append(32 + cam_num)
+    # 3. Caso geral / topologia nao detectada: prioriza o numero da camera diretamente (ex: 1)
     else:
-        # DVR analogico padrao
         candidatos.append(cam_num)
         candidatos.append(canal_digital_offset)
         candidatos.append(32 + cam_num)
 
-    # Remove duplicados preservando a ordem
+    # Remove duplicados preservando a ordem de prioridade
     resultado = []
     for c in candidatos:
         if c > 0 and c not in resultado:

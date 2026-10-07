@@ -69,8 +69,12 @@ INTERVALO_CICLO_SEGUNDOS = 5
 
 # Quando a DVR fica inacessível no meio de um download, esse é o intervalo
 # entre as tentativas de "ela já voltou?".
-INTERVALO_RETRY_SEGUNDOS = 15
-FUSO_EMPRESA = ZoneInfo("America/Sao_Paulo")
+# Fuso horario da regiao onde estao as DVRs (Cuiaba/Campo Grande = America/Cuiaba UTC-4)
+NOME_FUSO = os.environ.get("DVR_TIMEZONE", "America/Cuiaba")
+try:
+    FUSO_EMPRESA = ZoneInfo(NOME_FUSO)
+except Exception:
+    FUSO_EMPRESA = ZoneInfo("America/Cuiaba")
 
 
 class DownloadCancelado(Exception):
@@ -681,8 +685,14 @@ def baixar_pendentes_do_job(
                 if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
                     try:
                         try:
-                            dt_ini_ped = horario_dvr_local(inicio_trecho) if inicio_trecho else horario_dvr_local(data_inicio)
-                            dt_fim_ped = horario_dvr_local(fim_trecho) if fim_trecho else horario_dvr_local(data_fim)
+                            if inicio_trecho and fim_trecho:
+                                # O XML do ISAPI retorna o horario gravado no relogio da DVR com sufixo Z.
+                                # Nao devemos aplicar horario_dvr_local() aqui para nao subtrair o fuso uma 2a vez!
+                                dt_ini_ped = datetime.fromisoformat(inicio_trecho[:19])
+                                dt_fim_ped = datetime.fromisoformat(fim_trecho[:19])
+                            else:
+                                dt_ini_ped = horario_dvr_local(data_inicio)
+                                dt_fim_ped = horario_dvr_local(data_fim)
                         except Exception:
                             dt_ini_ped = horario_dvr_local(data_inicio)
                             dt_fim_ped = horario_dvr_local(data_fim)
@@ -1083,7 +1093,9 @@ def listar_jobs():
 
 @app.route("/api/health", methods=["GET"])
 def saude_aplicacao():
-    return jsonify(worker_state)
+    resposta = dict(worker_state)
+    resposta["fuso"] = NOME_FUSO
+    return jsonify(resposta)
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
