@@ -207,10 +207,9 @@ def preparar_banco():
         # Qualquer trecho que ficou "baixando" de uma execução anterior que
         # foi encerrada de forma abrupta volta a ser candidato a nova
         # tentativa.
-        banco.execute("UPDATE gravacoes SET status='pendente' WHERE status='baixando'")
         banco.execute(
-            "UPDATE jobs SET status='novo' WHERE status IN "
-                "('buscando','baixando','convertendo','cortando')"
+            "UPDATE jobs SET status='cancelado', finalizado_em=COALESCE(finalizado_em, CURRENT_TIMESTAMP) "
+            "WHERE status IN ('buscando','baixando','convertendo','cortando')"
         )
         banco.execute(
             "UPDATE jobs SET status='sem_gravacoes' WHERE status='concluido' "
@@ -260,21 +259,22 @@ def preparar_banco():
 
 def dvr_esta_acessivel(ip, porta=80, timeout=3):
     try:
-        with socket.create_connection((ip, porta), timeout=timeout):
+        with socket.create_connection((ip, int(porta)), timeout=timeout):
             return True
     except OSError:
         return False
 
 
-def esperar_dvr_voltar(ip, marcar_status=None, checar_cancelado=None):
-    """Fica em loop até a DVR responder de novo. 'marcar_status' é uma
-    função opcional para você poder ir atualizando o status do job no
-    banco enquanto espera (ex.: 'aguardando conexão')."""
+def esperar_dvr_voltar(ip, porta=80, marcar_status=None, checar_cancelado=None, max_segundos=20):
+    """Aguarda a DVR responder ate o limite max_segundos sem travar o worker para sempre."""
     if marcar_status:
         marcar_status("aguardando_conexao")
-    while not dvr_esta_acessivel(ip):
+    inicio_espera = time.time()
+    while not dvr_esta_acessivel(ip, porta=porta):
         if checar_cancelado and checar_cancelado():
             raise DownloadCancelado()
+        if time.time() - inicio_espera > max_segundos:
+            raise RuntimeError(f"DVR {ip}:{porta} nao respondeu apos {max_segundos}s.")
         time.sleep(INTERVALO_RETRY_SEGUNDOS)
 
 
@@ -303,47 +303,59 @@ def montar_busca(camera, data_inicio, data_fim, posicao):
     return xml.encode("utf-8")
 
 
-def buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id):
-    """Busca todas as páginas de resultado e salva cada trecho no banco
-    como 'pendente'. Se a DVR cair durante a busca, espera ela voltar e
-    continua da página em que parou (não perde o que já foi catalogado)."""
-    
-    # Converte o UTC para o horário local da DVR formatado para ISAPI
+def buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id, checar_cancelado=None):
+    """Busca trechos via ISAPI. Se a DVR nao suportar ISAPI ou falhar, retorna False sem travar o worker."""
     data_inicio_isapi = horario_dvr_local(data_inicio).strftime("%Y-%m-%dT%H:%M:%SZ")
     data_fim_isapi = horario_dvr_local(data_fim).strftime("%Y-%m-%dT%H:%M:%SZ")
     
     posicao = 0
+    total_encontrados = 0
+    tentativas_erro = 0
     while True:
-        while True:
-            try:
-                r = requests.post(
-                    f"http://{dvr_ip}/ISAPI/ContentMgmt/search",
-                    data=montar_busca(camera, data_inicio_isapi, data_fim_isapi, posicao),
-                    headers={"Content-Type": "application/xml"},
-                    auth=auth, timeout=30,
-                )
-                r.raise_for_status()
-                break
-            except requests.exceptions.RequestException:
-                esperar_dvr_voltar(dvr_ip)
+        if checar_cancelado and checar_cancelado():
+            raise DownloadCancelado()
+        try:
+            r = requests.post(
+                f"http://{dvr_ip}/ISAPI/ContentMgmt/search",
+                data=montar_busca(camera, data_inicio_isapi, data_fim_isapi, posicao),
+                headers={"Content-Type": "application/xml"},
+                auth=auth, timeout=8,
+            )
+            r.raise_for_status()
+            tentativas_erro = 0
+        except Exception as e_req:
+            tentativas_erro += 1
+            if tentativas_erro >= 2:
+                print(f"[job {job_id}] Busca ISAPI na DVR {dvr_ip} camera {camera} nao respondeu ({e_req}). Prosseguindo...")
+                return total_encontrados > 0
+            time.sleep(2)
+            continue
 
-        raiz = ET.fromstring(r.text)
+        try:
+            raiz = ET.fromstring(r.text)
+        except Exception:
+            break
         itens = raiz.findall(".//{*}searchMatchItem")
         if not itens:
             break
 
         with banco_lock:
             for item in itens:
-                uri = item.find(".//{*}playbackURI").text
-                inicio = item.find(".//{*}startTime").text
-                fim = item.find(".//{*}endTime").text
+                uri_el = item.find(".//{*}playbackURI")
+                ini_el = item.find(".//{*}startTime")
+                fim_el = item.find(".//{*}endTime")
+                if uri_el is None or ini_el is None or fim_el is None:
+                    continue
+                uri = uri_el.text
+                inicio = ini_el.text
+                fim = fim_el.text
                 parametros = parse_qs(urlparse(uri).query)
                 nome_trecho = parametros.get("name", [f"trecho_{posicao}"])[0]
                 tamanho_bloco = int(parametros.get("size", [0])[0])
 
                 # Calcula o tamanho estimado proporcional para a janela de tempo pedida
                 try:
-                    dt_ini_tr = datetime.fromisoformat(inicio[:19]) # Remove o 'Z' para ficar naive
+                    dt_ini_tr = datetime.fromisoformat(inicio[:19])
                     dt_fim_tr = datetime.fromisoformat(fim[:19])
                     dt_ini_ped = horario_dvr_local(data_inicio)
                     dt_fim_ped = horario_dvr_local(data_fim)
@@ -364,9 +376,12 @@ def buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id):
                 )
             banco.commit()
 
+        total_encontrados += len(itens)
         posicao += len(itens)
         if len(itens) < 50:
             break
+
+    return total_encontrados > 0
 
 
 def formatar_tempo_isapi_compacto(iso_str):
@@ -842,7 +857,32 @@ def processar_job(job):
     for camera in cameras:
         if job_foi_cancelado(job_id):
             return
-        buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id)
+        isapi_ok = False
+        if modo_download in ("auto", "isapi"):
+            try:
+                isapi_ok = buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id, checar_cancelado=lambda: job_foi_cancelado(job_id))
+            except Exception as e_busca:
+                print(f"[job {job_id}] Busca ISAPI camera {camera} erro: {e_busca}")
+
+        # Se ISAPI nao catalogou trechos ou o modo for estritamente SDK, e o SDK estiver disponivel:
+        # Cadastra o intervalo solicitado diretamente para download via NetSDK (porta 8000)!
+        if not isapi_ok and modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
+            dt_ini_loc = horario_dvr_local(data_inicio)
+            dt_fim_loc = horario_dvr_local(data_fim)
+            dur_seg = max(1.0, (dt_fim_loc - dt_ini_loc).total_seconds())
+            tam_estimado = max(10 * 1024 * 1024, int(dur_seg * 250_000))
+            nome_tr = f"rec_cam{camera}_{dt_ini_loc.strftime('%Y%m%d_%H%M%S')}"
+            with banco_lock:
+                banco.execute(
+                    "INSERT OR IGNORE INTO gravacoes "
+                    "(job_id, dvr_ip, camera, nome_trecho, inicio, fim, uri, tamanho) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (job_id, dvr_ip, camera, nome_tr,
+                     dt_ini_loc.isoformat(), dt_fim_loc.isoformat(),
+                     f"sdk://{dvr_ip}:{porta_sdk}/ch{camera}", tam_estimado)
+                )
+                banco.commit()
+            print(f"[job {job_id}] Cadastrado intervalo para download direto via SDK camera {camera}: {dt_ini_loc.strftime('%H:%M:%S')} ate {dt_fim_loc.strftime('%H:%M:%S')}")
 
     if job_foi_cancelado(job_id):
         return
@@ -890,7 +930,7 @@ def loop_trabalhador():
                 jobs = banco.execute(
                     "SELECT id, dvr_ip, usuario, senha, cameras, data_inicio, data_fim, "
                     "escola, codigo_escola, modo_download, porta_sdk "
-                    "FROM jobs WHERE status IN ('novo','erro')"
+                    "FROM jobs WHERE status = 'novo'"
                 ).fetchall()
             for job in jobs:
                 try:

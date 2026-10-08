@@ -68,7 +68,7 @@
       <h2>Novo download</h2>
       <form id="formulario">
         <label for="codigo_escola">Codigo escola</label>
-        <input id="codigo_escola" name="codigo_escola" list="lista_codigos" required placeholder="3140" autocomplete="off">
+        <input id="codigo_escola" name="codigo_escola" list="lista_codigos" placeholder="Ex: 3140 (opcional)" autocomplete="off">
         <datalist id="lista_codigos"></datalist>
 
         <label for="escola">Nome da escola</label>
@@ -290,9 +290,17 @@
 
   function aplicarEscola(item) {
     if (!item) return;
-    if (item.codigo && inputCodigo.value !== item.codigo) inputCodigo.value = item.codigo;
-    if (item.nome && inputEscola.value !== item.nome) inputEscola.value = item.nome;
-    if (item.dvr_ip && !inputIp.value) inputIp.value = item.dvr_ip;
+    if (item.codigo) inputCodigo.value = item.codigo;
+    if (item.nome) inputEscola.value = item.nome;
+    if (item.dvr_ip) {
+      inputIp.value = item.dvr_ip;
+      mensagem.style.color = 'var(--accent-dark)';
+      mensagem.textContent = `Escola ${item.nome} selecionada. IP da DVR: ${item.dvr_ip}`;
+    } else {
+      inputIp.value = '';
+      mensagem.style.color = 'var(--muted)';
+      mensagem.textContent = `Escola ${item.nome} selecionada. Digite o IP da DVR abaixo.`;
+    }
   }
 
   inputCodigo.addEventListener('input', () => {
@@ -311,30 +319,49 @@
 
   formulario.addEventListener('submit', async evento => {
     evento.preventDefault();
-    const botao = document.querySelector('#enviar'); botao.disabled = true; mensagem.textContent = 'Enviando...';
+    const botao = document.querySelector('#enviar');
+    botao.disabled = true;
+    mensagem.style.color = 'var(--muted)';
+    mensagem.textContent = 'Enviando...';
     try {
+      const ip = campo('dvr_ip');
+      if (!ip) throw new Error('Informe o endereço IP da DVR.');
       const inicioLocal = campo('data_inicio');
       const fimLocal = campo('data_fim');
-      if (new Date(fimLocal) <= new Date(inicioLocal)) throw new Error('O horario final deve ser depois do horario inicial.');
+      if (!inicioLocal || !fimLocal) throw new Error('Selecione os horários de início e fim.');
+      if (new Date(fimLocal) <= new Date(inicioLocal)) throw new Error('O horário final deve ser depois do horário inicial.');
       const dados = {
-        dvr_ip: campo('dvr_ip'),
+        dvr_ip: ip,
         escola: campo('escola'),
         codigo_escola: campo('codigo_escola'),
-        usuario: campo('usuario'),
+        usuario: campo('usuario') || 'admin',
         senha: campo('senha'),
-        cameras: campo('cameras'),
+        cameras: campo('cameras') || '1',
         data_inicio: iso(inicioLocal),
         data_fim: iso(fimLocal),
         porta_sdk: Number(campo('porta_sdk')) || 8000,
-        modo_download: campo('modo_download')
+        modo_download: campo('modo_download') || 'auto'
       };
-      const resposta = await fetch('/api/jobs', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dados) });
-      const retorno = await resposta.json(); if (!resposta.ok) throw new Error(retorno.erro || 'Falha ao criar download');
-      mensagem.textContent = 'Download adicionado. O trabalhador vai iniciar em seguida.'; formulario.reset(); document.querySelector('#usuario').value = 'admin'; 
+      const resposta = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dados)
+      });
+      const retorno = await resposta.json();
+      if (!resposta.ok) throw new Error(retorno.erro || 'Falha ao criar download');
+      mensagem.style.color = 'var(--accent-dark)';
+      mensagem.textContent = `Download adicionado com sucesso (Job #${retorno.id}). O trabalhador vai iniciar em seguida.`;
+      formulario.reset();
+      document.querySelector('#usuario').value = 'admin'; 
+      document.querySelector('#porta_sdk').value = '8000';
       await carregarCatalogoEscolas();
       await atualizarJobs();
-    } catch (erro) { mensagem.textContent = erro.message; }
-    finally { botao.disabled = false; }
+    } catch (erro) {
+      mensagem.style.color = 'var(--danger)';
+      mensagem.textContent = erro.message;
+    } finally {
+      botao.disabled = false;
+    }
   });
 
   carregarCatalogoEscolas();
