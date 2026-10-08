@@ -160,7 +160,6 @@
   };
 
   function renderizarJobs() {
-    const detalhesAbertos = new Set([...jobs.querySelectorAll('details[data-job-id][open]')].map(item => item.dataset.jobId));
     let lista = todosJobs;
     if (filtroAtual === 'ativos') {
       lista = todosJobs.filter(j => ['novo', 'buscando', 'baixando', 'convertendo', 'aguardando_conexao'].includes(j.status));
@@ -175,27 +174,85 @@
       return;
     }
 
-    jobs.innerHTML = lista.map(job => `<article class="job">
-      <div><strong>${job.escola || job.dvr_ip}</strong><small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong><span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
-      <div class="progress-label"><span>${formatBytes(job.bytes_baixados)} / ${formatBytes(job.bytes_total)} (${job.progresso_percentual}%)</span><span>${formatSpeed(job.bytes_por_segundo)}</span></div>
-      <progress max="100" value="${job.progresso_percentual}"></progress>
-      <small>${job.status === 'cancelado' ? `Tempo decorrido: ${formatDuration(job.tempo_segundos)} | Cancelado` : (job.status === 'concluido' ? `Tempo total: ${formatDuration(job.tempo_segundos)} | Concluido` : `Tempo: ${formatDuration(job.tempo_segundos)} | Restante estimado: ${formatDuration(job.segundos_restantes)}`)}</small>
-      ${job.trecho_atual ? `<div class="progress-label"><span>Trecho atual: camera ${job.camera_atual}</span><span>${job.status === 'erro' ? 'verificar' : job.status}</span></div>` : ''}
-      ${job.erro_atual ? `<p class="job-error">Falha: ${job.erro_atual}</p>` : ''}
-      ${job.erro_detalhe ? `<p class="job-error">Detalhe: ${job.erro_detalhe}</p>` : ''}
-      ${job.status === 'sem_gravacoes' ? '<p class="job-error" style="color:#6b5a26">Nenhuma gravacao encontrada. Confira IP, camera, data e fuso horario da DVR.</p>' : ''}
-      ${job.arquivos && job.arquivos.length ? `<details class="videos" data-job-id="${job.id}"><summary>Ver gravacoes (${job.arquivos.length})</summary>${job.arquivos.map(arquivo => `<div class="video-item"><small>Camera ${arquivo.camera} - ${arquivo.nome}</small><video controls preload="none" src="${arquivo.url}"></video></div>`).join('')}</details>` : ''}
-      <div style="display:flex; gap:8px; align-items:center;">
+    // Guarda elementos de video existentes na pagina para NUNCA destrui-los durante a reproducao
+    const containersVideos = new Map();
+    jobs.querySelectorAll('details.videos[data-job-id]').forEach(det => {
+      containersVideos.set(String(det.dataset.jobId), det);
+    });
+
+    const fragment = document.createDocumentFragment();
+
+    lista.forEach(job => {
+      const article = document.createElement('article');
+      article.className = 'job';
+      article.dataset.jobId = String(job.id);
+
+      const divConteudo = document.createElement('div');
+      divConteudo.innerHTML = `
+        <strong>${job.escola || job.dvr_ip}</strong>
+        <small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong>
+        <span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>
+        ${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
+        <div class="progress-label">
+          <span>${formatBytes(job.bytes_baixados)} / ${formatBytes(job.bytes_total)} (${job.progresso_percentual}%)</span>
+          <span>${formatSpeed(job.bytes_por_segundo)}</span>
+        </div>
+        <progress max="100" value="${job.progresso_percentual}"></progress>
+        <small>${job.status === 'cancelado' ? `Tempo decorrido: ${formatDuration(job.tempo_segundos)} | Cancelado` : (job.status === 'concluido' ? `Tempo total: ${formatDuration(job.tempo_segundos)} | Concluido` : `Tempo: ${formatDuration(job.tempo_segundos)} | Restante estimado: ${formatDuration(job.segundos_restantes)}`)}</small>
+        ${job.trecho_atual ? `<div class="progress-label"><span>Trecho atual: camera ${job.camera_atual}</span><span>${job.status === 'erro' ? 'verificar' : job.status}</span></div>` : ''}
+        ${job.erro_atual ? `<p class="job-error">Falha: ${job.erro_atual}</p>` : ''}
+        ${job.erro_detalhe ? `<p class="job-error">Detalhe: ${job.erro_detalhe}</p>` : ''}
+        ${job.status === 'sem_gravacoes' ? '<p class="job-error" style="color:#6b5a26">Nenhuma gravacao encontrada. Confira IP, camera, data e fuso horario da DVR.</p>' : ''}
+      `;
+
+      // Se houver arquivos concluidos, preserva o video atual tocando sem reiniciar
+      if (job.arquivos && job.arquivos.length) {
+        const jobIdStr = String(job.id);
+        const detExistente = containersVideos.get(jobIdStr);
+        if (detExistente && detExistente.querySelectorAll('video').length === job.arquivos.length) {
+          divConteudo.appendChild(detExistente);
+        } else {
+          const isOpen = detExistente ? detExistente.open : false;
+          const novoDet = document.createElement('details');
+          novoDet.className = 'videos';
+          novoDet.dataset.jobId = jobIdStr;
+          novoDet.open = isOpen;
+          novoDet.innerHTML = `
+            <summary>Ver gravacoes (${job.arquivos.length})</summary>
+            ${job.arquivos.map(arquivo => `
+              <div class="video-item">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <small style="margin:0;">Camera ${arquivo.camera} - ${arquivo.nome}</small>
+                  <a href="${arquivo.url}" download="${arquivo.nome}.mp4" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:700;">⬇ Baixar video</a>
+                </div>
+                <video controls preload="metadata" playsinline src="${arquivo.url}"></video>
+              </div>
+            `).join('')}
+          `;
+          divConteudo.appendChild(novoDet);
+        }
+      }
+
+      const divAcoes = document.createElement('div');
+      divAcoes.style = 'display:flex; gap:8px; align-items:center; margin-top:8px;';
+      divAcoes.innerHTML = `
         ${!['concluido', 'cancelado', 'sem_gravacoes'].includes(job.status) ? `<button class="cancelar" type="button" data-job-id="${job.id}">Cancelar download</button>` : ''}
         ${['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(job.status) ? `<button class="excluir" type="button" data-job-id="${job.id}">Remover da lista</button>` : ''}
-      </div>
-      </div>
-      <span class="status" data-status="${job.status}">${job.status}</span>
-    </article>`).join('');
-    detalhesAbertos.forEach(jobId => {
-      const detalhe = jobs.querySelector(`details[data-job-id="${jobId}"]`);
-      if (detalhe) detalhe.open = true;
+      `;
+      divConteudo.appendChild(divAcoes);
+
+      const spanStatus = document.createElement('span');
+      spanStatus.className = 'status';
+      spanStatus.dataset.status = job.status;
+      spanStatus.textContent = job.status;
+
+      article.appendChild(divConteudo);
+      article.appendChild(spanStatus);
+      fragment.appendChild(article);
     });
+
+    jobs.innerHTML = '';
+    jobs.appendChild(fragment);
   }
 
   async function atualizarJobs() {
