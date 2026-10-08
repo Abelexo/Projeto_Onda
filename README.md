@@ -1,190 +1,114 @@
-# Projeto Onda – Central de Gravações Hikvision
+# Projeto Onda - Central de Gravacoes Hikvision
 
-Aplicação web em Python para baixar, cortar e converter gravações de câmeras DVR Hikvision.
+Aplicacao web para download automatizado, recorte e organizacao de gravacoes de DVRs Hikvision e JFL.
 
-## O que o projeto faz
+---
 
-1. Você acessa a página no navegador e preenche um formulário com o IP da câmera, usuário, senha, número das câmeras e o intervalo de tempo que deseja baixar.
-2. O servidor inicia o download automaticamente. Ele tenta primeiro pelo SDK da Hikvision (porta 8000) e, se não funcionar, cai automaticamente para ISAPI (porta 80 via HTTP).
-3. Você acompanha o andamento em tempo real pela barra de progresso na página.
-4. Quando o download termina, o vídeo é cortado no intervalo exato. O sistema tenta primeiro manter o codec original sem recodificar; se isso não for aceito pelo FFmpeg, usa H.264 como fallback para o navegador.
-5. O vídeo fica disponível para reprodução direto na página.
+## Como o sistema funciona
 
-## Requisitos
+O Projeto Onda resolve o problema de ter que baixar horas de gravacoes manualmente pelo aplicativo de monitoramento ou pela interface web lenta das DVRs. 
 
-### Python e bibliotecas pip
+### Pontos principais do funcionamento:
 
-- Python 3.10 ou superior
-- Instale as dependências Python com:
-  ```bash
-  pip install -r requirements.txt
-  ```
+1. **Dois Motores de Download (SDK e ISAPI):**
+   - **SDK Nativo Hikvision (Porta 8000):** Conecta diretamente no protocolo proprietario da Hikvision usando as DLLs nativas em C/C++ (`HCNetSDK.dll`). A DVR envia exclusivamente o intervalo de tempo solicitado, sem precisar baixar blocos fisicos gigantescos. E a opcao mais rapida e estavel.
+     *(Nota: O SDK nativo funciona exclusivamente em sistemas Windows, pois utiliza as DLLs de 64 bits da Hikvision).*
+   - **ISAPI Web (Porta 80 HTTP):** Protocolo REST/XML via HTTP da Hikvision. Serve como contingencia universal e funciona em qualquer sistema operacional.
+   - **Modo Automatico Inteligente:** O sistema testa a porta 8000 via SDK. Se autenticar com sucesso, baixa direto pelo SDK. Se a porta 8000 estiver bloqueada na rede ou a senha for diferente da web, o sistema alterna automaticamente no mesmo instante para ISAPI na porta 80, garantindo o download sem travar a fila.
 
-### Dependências de sistema (instalar separadamente)
+2. **Trabalhador em Segundo Plano (Worker Assincrono):**
+   - O Flask serve a interface web enquanto uma thread separada fica em execucao continua processando a fila de downloads.
+   - Voce pode cadastrar varios pedidos, fechar a aba do navegador ou fechar a sessao que o servidor continua baixando no terminal normalmente.
 
-O projeto precisa de **FFmpeg** ou **GStreamer** para cortar e converter os vídeos. Sem um deles, o download funciona, mas o arquivo final não será gerado.
+3. **Corte e Conversao com FFmpeg:**
+   - O sistema recorta os videos no segundo exato pedido e gera arquivos `.mp4` organizados automaticamente em pastas por data, codigo, escola e camera.
 
-#### Linux (Ubuntu/Debian)
-```bash
-sudo apt update
-sudo apt install -y ffmpeg
-# ou, como alternativa, instale o GStreamer:
-sudo apt install -y gstreamer1.0-tools python3-gi python3-gst-1.0
-```
+4. **Validacao Inteligente de Cameras:**
+   - A aplicacao le a topologia da DVR (quantidade de canais analogicos e canais IP digitais). Se um operador pedir uma camera que nao existe no aparelho (ex: camera 20 em uma DVR de 4 canais), o sistema avisa na hora que a camera e invalida, sem perder tempo tentando baixar o que nao existe.
 
-#### Windows
-- **FFmpeg** – baixe o pacote estático em https://ffmpeg.org/download.html (Escolha *Windows* → *ffmpeg‑release‑full.7z* ou *zip*). Extraia a pasta e **adicione o diretório `bin` ao `PATH`** do Windows.
-- **SDK da Hikvision (HCNetSDK.dll)** – o SDK é distribuído pela própria Hikvision e requer registro no portal de desenvolvedores. Para usar o modo SDK:
-  1. Acesse https://developer.hikvision.com/ e faça login.
-  2. Baixe o *HCNetSDK* correspondente à sua arquitetura (geralmente `x64`).
-  3. Crie a pasta `sdk_dlls` na raiz do projeto (`Projeto_Onda/sdk_dlls`).
-  4. Copie o arquivo `HCNetSDK.dll` (ou `libhcnetsdk.so` para Linux) para essa pasta.
-  5. Opcional: execute o script `setup_and_run.ps1`/`setup_and_run.sh`, que verificará a presença da DLL e mostrará um aviso caso ela não esteja presente.
+5. **Catalogo Automatico de Escolas:**
+   - O codigo da escola e obrigatorio no cadastro. Conforme novos downloads sao feitos, o banco SQLite atualiza automaticamente o vinculo de codigo, nome e IP da DVR. Ao digitar o codigo da escola no futuro, o IP preenche sozinho.
 
-> **Importante:** O SDK da Hikvision é uma biblioteca proprietária; por isso não pode ser redistribuído automaticamente por este projeto. O usuário deve fazer o download manualmente seguindo as etapas acima.
+6. **Player Web Continuo:**
+   - As gravacoes concluidas podem ser assistidas direto na pagina do navegador ou baixadas pelo botao de download. O player de video continua tocando sem fechar durante as atualizacoes periodicas de progresso.
 
-## Como rodar
+---
 
-O projeto precisa ser iniciado pelo terminal. Não há executável de duplo-clique.
-
-Use o script de setup ou o ambiente virtual do projeto:
-
-```bash
-./setup_and_run.sh
-```
-
-Execucao manual:
-
-```bash
-.venv/bin/python app.py
-```
-
-Depois abra o navegador em: `http://127.0.0.1:5000`
-
-Se estiver acessando de outro computador na mesma rede:
-`http://IP_DA_MAQUINA:5000`
-
-## Execucao atual no notebook/Linux
-
-Enquanto o projeto estiver sendo executado neste computador/notebook, use o
-ambiente virtual local:
-
-```bash
-.venv/bin/python app.py
-```
-
-O processo precisa continuar aberto para o trabalhador continuar baixando. A
-interface pode ser acessada em `http://localhost:5000` ou pelo IP da máquina
-na rede local.
-
-Para salvar diretamente em uma pasta compartilhada da empresa, essa pasta
-precisa estar montada no Linux. Depois defina `DVR_APP_DESTINO` antes de
-iniciar o app:
-
-```bash
-export DVR_APP_DESTINO="/mnt/servidor_gravacoes/local"
-.venv/bin/python app.py
-```
-
-O caminho `/mnt/servidor_gravacoes/local` é apenas um exemplo. A montagem SMB
-deve ser feita pelo sistema operacional com uma conta que tenha permissão de
-leitura e gravação. Um endereço Windows como `\\192.168.1.20\local` não deve
-ser usado diretamente pelo Python no Linux sem antes ser montado.
-
-No Windows, o equivalente poderá ser um caminho UNC:
-
-```powershell
-$env:DVR_APP_DESTINO = "\\192.168.1.20\local"
-.venv\Scripts\python.exe app.py
-```
-
-O app cria dentro desse destino as pastas por data, código, escola e câmera.
-
-## Estrutura dos arquivos
+## Estrutura do Projeto
 
 ```
 projeto-onda/
-├── app.py               # Servidor Flask – lógica de download, API e banco de dados
-├── hikvision_sdk.py     # Conexão com o SDK nativo da Hikvision (Windows)
-├── requirements.txt     # Dependências Python do projeto
+├── app.py               # Servidor Flask, API e trabalhador em segundo plano
+├── hikvision_sdk.py     # Integracao com a biblioteca nativa HCNetSDK (Windows)
+├── requirements.txt     # Dependencias Python
+├── setup_and_run.ps1    # Instalador e inicializador automatico para Windows PowerShell
+├── sdk_dlls/            # DLLs oficiais da Hikvision (HCNetSDK, OpenSSL, HCNetSDKCom)
 ├── static/
-│   └── index.html       # Interface web (formulário, progresso e reprodução de vídeo)
-└── README.md            # Este arquivo
+│   └── index.html       # Interface web (formulario, barra de progresso e player)
+└── README.md            # Este manual
 ```
 
-## Modos de download
+---
 
-| Modo | Como funciona |
-|------|---------------|
-| Automático | Tenta SDK (porta 8000) primeiro; se falhar, usa ISAPI (porta 80) |
-| SDK | Usa a DLL oficial da Hikvision. Mais rápido, mas só funciona em Windows |
-| ISAPI | Download via HTTP simples. Funciona em qualquer sistema operacional |
+## Instalacao e Execucao no Windows (PowerShell)
 
-## Observações
+A instalacao e a execucao sao feitas totalmente via terminal utilizando o script automatizado `setup_and_run.ps1`.
 
-- O banco de dados SQLite (`dvr_app.db`) é criado automaticamente na primeira execução.
-- Os vídeos baixados ficam salvos na pasta `gravacoes/` dentro do projeto.
-- O servidor continua baixando mesmo que você feche o navegador — enquanto `app.py` estiver rodando no terminal.
+### Pre-requisito:
+- Windows com Python 3.10 ou superior instalado (marcar a opcao "Add Python to PATH" durante a instalacao do Python).
 
-## Instalação rápida com script (Windows PowerShell / Linux/macOS)
+### Passo a passo no PowerShell:
 
-O repositório agora inclui dois **scripts de instalação** que automatizam:
+1. Abra o **PowerShell** e navegue ate a pasta do projeto:
+   ```powershell
+   cd C:\caminho\para\projeto-onda
+   ```
 
-1. Verificação da presença do Python
-2. Criação do ambiente virtual `.venv`
-3. Instalação das dependências listadas em `requirements.txt`
-4. Verificação de FFmpeg, GStreamer e SDK
-5. Pergunta interativa onde armazenar os vídeos baixados
-6. Verifica se a porta 5000 já está ocupada
-7. Inicia o servidor Flask e exibe a URL de acesso
+2. Permita a execucao de scripts no PowerShell para esta sessao (caso ainda nao tenha permitido):
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   ```
 
-- **Windows** – execute `setup_and_run.ps1` no PowerShell (execute `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` se necessário).
-- **Linux/macOS/notebook** – torne o script executável (`chmod +x setup_and_run.sh`) e rode `./setup_and_run.sh`.
+3. Execute o instalador automatico:
+   ```powershell
+   .\setup_and_run.ps1
+   ```
 
-Os scripts não enviam bancos, gravações ou arquivos temporários para o GitHub.
-Eles criam o ambiente `.venv`, instalam `requirements.txt`, verificam FFmpeg,
-GStreamer e o SDK e detectam se a porta 5000 já está em uso.
+### O que o instalador faz sozinho:
+- Verifica se o Python esta instalado.
+- Cria o ambiente virtual isolado (`.venv`).
+- Instala todas as dependencias do `requirements.txt`.
+- Verifica o FFmpeg (se nao estiver no computador, ele baixa e descompacta o FFmpeg automaticamente).
+- Valida as DLLs do SDK da Hikvision na pasta `sdk_dlls/`.
+- Pergunta onde voce deseja salvar as gravacoes (pasta local ou compartilhamento de rede `\\servidor\pasta`).
+- Inicia o servidor e exibe o endereco de acesso.
 
-O FFmpeg e o GStreamer são dependências do sistema, não pacotes Python. No
-Ubuntu/Debian, o setup pode instalá-los com:
+---
 
-```bash
-DVR_INSTALAR_DEPENDENCIAS_SISTEMA=1 ./setup_and_run.sh
+## Como Acessar a Interface
+
+Com o servidor rodando no PowerShell:
+
+- **No proprio servidor:**
+  Abra o navegador e acesse: `http://localhost:5000`
+
+- **De outro computador na mesma rede:**
+  Acesse: `http://IP_DO_SERVIDOR:5000` (o script exibe o IP exato da sua maquina na inicializacao).
+
+---
+
+## Como Iniciar nas Proximas Vezes
+
+Apos a primeira instalacao, para iniciar o servidor novamente, basta rodar no PowerShell:
+
+```powershell
+.\setup_and_run.ps1
 ```
 
-O SDK Hikvision não é baixado automaticamente porque é uma biblioteca
-proprietária. Para usar o modo SDK, coloque a biblioteca correspondente em
-`sdk_dlls/` (`HCNetSDK.dll` no Windows ou `libhcnetsdk.so` no Linux). Sem ela,
-o modo automático usa ISAPI na porta 80.
+Ou, se preferir rodar direto pelo Python do ambiente virtual:
 
-Se a porta 5000 já estiver ocupada, isso significa que o servidor já está
-rodando. Nesse caso o script encerra sem abrir uma segunda instância; acesse
-`http://localhost:5000`.
-
-O FFmpeg e o GStreamer são dependências do sistema, não pacotes Python. No
-Ubuntu/Debian, o setup pode instalá-los com:
-
-```bash
-DVR_INSTALAR_DEPENDENCIAS_SISTEMA=1 ./setup_and_run.sh
+```powershell
+.\.venv\Scripts\python.exe app.py
 ```
 
-O SDK Hikvision não é baixado automaticamente porque é uma biblioteca
-proprietária. Para usar o modo SDK, coloque a biblioteca correspondente em
-`sdk_dlls/` (`HCNetSDK.dll` no Windows ou `libhcnetsdk.so` no Linux). Sem ela,
-o modo automático usa ISAPI na porta 80.
-
-Se a porta 5000 já estiver ocupada, isso significa que o servidor já está
-rodando. Nesse caso o script encerra sem abrir uma segunda instância; acesse
-`http://localhost:5000`.
-
-## Testes
-
-O arquivo `testes_download.ipynb` contém testes seguros dos contratos de
-cancelamento do SDK e do ISAPI, sem credenciais reais. O teste final na DVR
-deve ser feito com uma câmera e um intervalo curto em cada modo:
-
-- `SDK`: porta 8000 e DLLs Hikvision instaladas.
-- `ISAPI`: porta 80, sem depender do SDK.
-
-O modo automático tenta SDK e usa ISAPI como fallback. O painel mostra o
-estado do trabalhador e o detalhe de erros de busca ou de processamento.
+Para interromper o servidor a qualquer momento, pressione `Ctrl + C` no PowerShell.
