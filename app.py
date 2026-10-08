@@ -321,6 +321,8 @@ def buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id, checar
                 headers={"Content-Type": "application/xml"},
                 auth=auth, timeout=8,
             )
+            if r.status_code == 400 and ("badTrackID" in r.text or "invalidtrack" in r.text.lower()):
+                raise hikvision_sdk.CameraInvalidaError(f"Câmera {camera} inválida ou inexistente nesta DVR (ISAPI badTrackID).")
             r.raise_for_status()
             tentativas_erro = 0
         except Exception as e_req:
@@ -444,6 +446,9 @@ def baixar_um_trecho(
                 data=corpo, headers=cabecalhos, auth=auth,
                 stream=True, timeout=60,
             ) as resp:
+                if resp.status_code == 400 and ("badTrackID" in resp.text or "invalidtrack" in resp.text.lower()):
+                    raise hikvision_sdk.CameraInvalidaError(f"Câmera {camera} inválida ou inexistente nesta DVR (ISAPI badTrackID).")
+
                 if eh_tentativa_corte and resp.status_code not in (200, 206):
                     continue
 
@@ -726,6 +731,18 @@ def baixar_pendentes_do_job(
                         )
                         if job_foi_cancelado(job_id):
                             raise DownloadCancelado()
+                    except hikvision_sdk.CameraInvalidaError as e_invalida:
+                        msg_invalida = str(e_invalida)
+                        print(f"[job {job_id}] Câmera inválida detectada: {msg_invalida}")
+                        with banco_lock:
+                            banco.execute(
+                                "UPDATE gravacoes SET status='erro', ultimo_erro=?, atualizado_em=CURRENT_TIMESTAMP "
+                                "WHERE job_id=? AND dvr_ip=? AND camera=? AND nome_trecho=?",
+                                (msg_invalida, job_id, dvr_ip, camera, nome_trecho),
+                            )
+                            banco.commit()
+                        atualizar_status_job("erro", detalhe=msg_invalida)
+                        return
                     except Exception as erro_sdk:
                         if isinstance(erro_sdk, DownloadCancelado):
                             raise
@@ -738,13 +755,26 @@ def baixar_pendentes_do_job(
                 # 2. Modo ISAPI (Porta 80) caso o SDK não tenha sido usado ou tenha falhado
                 if not sucesso_download:
                     atualizar_status_job("baixando", protocolo="ISAPI")
-                    baixar_um_trecho(
-                        dvr_ip, auth, uri, origem, tamanho,
-                        camera=camera, data_inicio_pedido=data_inicio,
-                        data_fim_pedido=data_fim, usuario=auth.username, senha=auth.password,
-                        atualizar_progresso=atualizar_progresso,
-                        checar_cancelado=lambda: job_foi_cancelado(job_id),
-                    )
+                    try:
+                        baixar_um_trecho(
+                            dvr_ip, auth, uri, origem, tamanho,
+                            camera=camera, data_inicio_pedido=data_inicio,
+                            data_fim_pedido=data_fim, usuario=auth.username, senha=auth.password,
+                            atualizar_progresso=atualizar_progresso,
+                            checar_cancelado=lambda: job_foi_cancelado(job_id),
+                        )
+                    except hikvision_sdk.CameraInvalidaError as e_invalida_isapi:
+                        msg_invalida = str(e_invalida_isapi)
+                        print(f"[job {job_id}] Câmera inválida detectada no ISAPI: {msg_invalida}")
+                        with banco_lock:
+                            banco.execute(
+                                "UPDATE gravacoes SET status='erro', ultimo_erro=?, atualizado_em=CURRENT_TIMESTAMP "
+                                "WHERE job_id=? AND dvr_ip=? AND camera=? AND nome_trecho=?",
+                                (msg_invalida, job_id, dvr_ip, camera, nome_trecho),
+                            )
+                            banco.commit()
+                        atualizar_status_job("erro", detalhe=msg_invalida)
+                        return
 
                 if job_foi_cancelado(job_id):
                     with banco_lock:
@@ -857,16 +887,8 @@ def processar_job(job):
     for camera in cameras:
         if job_foi_cancelado(job_id):
             return
-        isapi_ok = False
-        if modo_download in ("auto", "isapi"):
-            try:
-                isapi_ok = buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id, checar_cancelado=lambda: job_foi_cancelado(job_id))
-            except Exception as e_busca:
-                print(f"[job {job_id}] Busca ISAPI camera {camera} erro: {e_busca}")
-
-        # Se ISAPI nao catalogou trechos ou o modo for estritamente SDK, e o SDK estiver disponivel:
-        # Cadastra o intervalo solicitado diretamente para download via NetSDK (porta 8000)!
-        if not isapi_ok and modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
+        # PRIORIDADE TOTAL AO SDK em modo 'auto' ou 'sdk':
+        if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
             dt_ini_loc = horario_dvr_local(data_inicio)
             dt_fim_loc = horario_dvr_local(data_fim)
             dur_seg = max(1.0, (dt_fim_loc - dt_ini_loc).total_seconds())
@@ -882,7 +904,18 @@ def processar_job(job):
                      f"sdk://{dvr_ip}:{porta_sdk}/ch{camera}", tam_estimado)
                 )
                 banco.commit()
-            print(f"[job {job_id}] Cadastrado intervalo para download direto via SDK camera {camera}: {dt_ini_loc.strftime('%H:%M:%S')} ate {dt_fim_loc.strftime('%H:%M:%S')}")
+            print(f"[job {job_id}] Prioridade SDK ativa: cadastrado intervalo direto para camera {camera}: {dt_ini_loc.strftime('%H:%M:%S')} ate {dt_fim_loc.strftime('%H:%M:%S')}")
+        else:
+            # Modo estritamente 'isapi' ou quando o SDK nao estiver disponivel
+            try:
+                buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id, checar_cancelado=lambda: job_foi_cancelado(job_id))
+            except hikvision_sdk.CameraInvalidaError as e_invalida_busca:
+                msg_invalida = str(e_invalida_busca)
+                print(f"[job {job_id}] {msg_invalida}")
+                atualizar_status_job("erro", detalhe=msg_invalida)
+                return
+            except Exception as e_busca:
+                print(f"[job {job_id}] Busca ISAPI camera {camera} erro: {e_busca}")
 
     if job_foi_cancelado(job_id):
         return
@@ -972,10 +1005,28 @@ def criar_job():
     dados = request.get_json()
     if not isinstance(dados, dict):
         return jsonify({"erro": "O corpo da requisicao deve ser JSON."}), 400
-    campos_obrigatorios = ["dvr_ip", "usuario", "senha", "cameras", "data_inicio", "data_fim"]
-    faltando = [c for c in campos_obrigatorios if not dados.get(c)]
+    campos_obrigatorios = ["dvr_ip", "usuario", "senha", "cameras", "data_inicio", "data_fim", "codigo_escola"]
+    faltando = [c for c in campos_obrigatorios if not str(dados.get(c, "")).strip()]
     if faltando:
-        return jsonify({"erro": f"Campos faltando: {', '.join(faltando)}"}), 400
+        return jsonify({"erro": f"Campos obrigatórios faltando: {', '.join(faltando)}"}), 400
+
+    cod_escola = str(dados.get("codigo_escola", "")).strip()
+    if not cod_escola:
+        return jsonify({"erro": "O código da escola é obrigatório."}), 400
+
+    cameras_brutas = str(dados.get("cameras", "")).strip()
+    cameras_validas = []
+    for c in cameras_brutas.split(","):
+        c_str = c.strip()
+        if not c_str:
+            continue
+        if not c_str.isdigit() or int(c_str) < 1:
+            return jsonify({"erro": f"Câmera '{c_str}' inválida. Informe números positivos (ex: 1, 2, 5)."}), 400
+        cameras_validas.append(c_str)
+    if not cameras_validas:
+        return jsonify({"erro": "Informe ao menos uma câmera válida."}), 400
+    cameras_csv = ",".join(cameras_validas)
+
     try:
         inicio = datetime.fromisoformat(dados["data_inicio"].replace("Z", "+00:00"))
         fim = datetime.fromisoformat(dados["data_fim"].replace("Z", "+00:00"))
@@ -1002,24 +1053,22 @@ def criar_job():
         cursor = banco.execute(
             "INSERT INTO jobs (dvr_ip, usuario, senha, cameras, data_inicio, data_fim, escola, codigo_escola, modo_download, porta_sdk) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (dvr_ip_limpo, dados["usuario"], dados["senha"], dados["cameras"],
+            (dvr_ip_limpo, dados["usuario"], dados["senha"], cameras_csv,
              dados["data_inicio"], dados["data_fim"], dados.get("escola", ""),
-             dados.get("codigo_escola", ""), modo_download, porta_sdk),
+             cod_escola, modo_download, porta_sdk),
         )
         
         # Atualiza o IP da escola na tabela escolas caso tenha codigo informado
-        cod_escola = str(dados.get("codigo_escola", "")).strip()
         nome_escola = str(dados.get("escola", "")).strip()
         dvr_ip = dvr_ip_limpo
-        if cod_escola:
-            banco.execute("""
-                INSERT INTO escolas (codigo, nome, dvr_ip, atualizado_em)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(codigo) DO UPDATE SET
-                    nome=CASE WHEN ? != '' THEN ? ELSE nome END,
-                    dvr_ip=CASE WHEN ? != '' THEN ? ELSE dvr_ip END,
-                    atualizado_em=CURRENT_TIMESTAMP
-            """, (cod_escola, nome_escola or cod_escola, dvr_ip, nome_escola, nome_escola, dvr_ip, dvr_ip))
+        banco.execute("""
+            INSERT INTO escolas (codigo, nome, dvr_ip, atualizado_em)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(codigo) DO UPDATE SET
+                nome=CASE WHEN ? != '' THEN ? ELSE nome END,
+                dvr_ip=CASE WHEN ? != '' THEN ? ELSE dvr_ip END,
+                atualizado_em=CURRENT_TIMESTAMP
+        """, (cod_escola, nome_escola or cod_escola, dvr_ip, nome_escola, nome_escola, dvr_ip, dvr_ip))
 
         banco.commit()
         job_id = cursor.lastrowid

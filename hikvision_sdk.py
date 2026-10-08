@@ -55,6 +55,11 @@ def formatar_erro_sdk(codigo):
     return f"codigo {codigo} ({desc})"
 
 
+class CameraInvalidaError(ValueError):
+    """Lançada quando a câmera solicitada não existe ou é inválida na DVR/NVR."""
+    pass
+
+
 class NET_DVR_DEVICEINFO_V30(Structure):
     _pack_ = 1
     # Exatamente 80 bytes conforme especificacao oficial da Hikvision
@@ -554,13 +559,19 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
 def _determinar_canais_candidatos(camera_solicitada, dev_info):
     """
     Determina os canais SDK a serem tentados.
-    Para cameras analogicas e IP / ONVIF conectadas a DVRs ou NVRs:
-      - O numero da camera solicitada (ex: 1) é SEMPRE a prioridade máxima!
-      - Em NVRs e canais IP, testa tambem o deslocamento digital (33, etc).
-    Retorna uma lista ordenada sem duplicatas priorizando o canal mais provavel.
+    Valida a capacidade de canais da DVR (analógicos + digitais IP).
+    Lança CameraInvalidaError caso a câmera seja menor que 1 ou exceda os canais suportados.
+    Para câmeras analógicas (ex: 1, 2) testa o canal direto correspondente.
+    Para câmeras IP testa o deslocamento digital (ex: canal 33, 34, etc).
+    Retorna uma lista ordenada sem duplicatas priorizando o canal correto.
     """
-    cam_num = int(camera_solicitada)
-    candidatos = []
+    try:
+        cam_num = int(camera_solicitada)
+    except (ValueError, TypeError):
+        raise CameraInvalidaError(f"Câmera '{camera_solicitada}' inválida: número não numérico.")
+
+    if cam_num < 1:
+        raise CameraInvalidaError(f"Câmera {cam_num} inválida. O número da câmera deve ser maior ou igual a 1.")
 
     start_dchan = int(getattr(dev_info, "byStartDChan", 0)) if dev_info else 0
     start_chan = int(getattr(dev_info, "byStartChan", 1)) if dev_info else 1
@@ -568,24 +579,36 @@ def _determinar_canais_candidatos(camera_solicitada, dev_info):
     ip_chan_num = int(getattr(dev_info, "byIPChanNum", 0)) if dev_info else 0
     high_dchan = int(getattr(dev_info, "byHighDChanNum", 0)) if dev_info else 0
     total_ip = ip_chan_num + (high_dchan * 256)
-
-    canal_digital_offset = (start_dchan + cam_num - 1) if start_dchan > 0 else (32 + cam_num)
+    total_canais = chan_num + total_ip
 
     if dev_info:
         print(f"[SDK] Topologia da DVR: analogicos={chan_num} (inicio {start_chan}), digitais_ip={total_ip}, canal_inicial_ip={start_dchan}")
 
-    # Prioridade 1: testar o canal correspondente a camera pedida (ex: 1)
-    candidatos.append(cam_num)
+    # Validação estrita: se a DVR forneceu a topologia e a câmera solicitada é maior que o total suportado
+    if total_canais > 0 and cam_num > total_canais:
+        raise CameraInvalidaError(
+            f"Câmera {cam_num} inválida ou inexistente nesta DVR (dispositivo possui capacidade máxima de {total_canais} canais: {chan_num} analógicos e {total_ip} IP)."
+        )
 
-    # Prioridade 2: canal analogico com offset caso start_chan > 1
-    if chan_num > 0 and start_chan > 1:
+    candidatos = []
+    canal_digital_offset = (start_dchan + cam_num - 1) if start_dchan > 0 else (32 + cam_num)
+
+    if chan_num == 0 and total_ip > 0:
+        # NVR puramente digital/IP (ex: NVR Hikvision)
+        candidatos.append(canal_digital_offset)
+        candidatos.append(cam_num)
+    elif cam_num <= chan_num:
+        # Câmera analógica dentro da faixa (ex: cam 1 -> canal 1, cam 2 -> canal 2)
         candidatos.append(start_chan + cam_num - 1)
-
-    # Prioridade 3: canais digitais/IP (ex: 33)
-    candidatos.append(canal_digital_offset)
-    candidatos.append(32 + cam_num)
-    if start_dchan > 0:
-        candidatos.append(start_dchan + cam_num - 1)
+        if total_ip > 0:
+            candidatos.append(canal_digital_offset)
+    else:
+        # Câmera IP conectada em DVR híbrida além dos analógicos (ex: cam 9 numa DVR de 8 canais é o 1º canal IP)
+        ip_index = cam_num - chan_num
+        offset_ip = (start_dchan + ip_index - 1) if start_dchan > 0 else (32 + ip_index)
+        candidatos.append(offset_ip)
+        candidatos.append(canal_digital_offset)
+        candidatos.append(cam_num)
 
     # Remove duplicados preservando a ordem de prioridade
     resultado = []
@@ -671,6 +694,7 @@ def baixar_por_tempo_sdk(
         handle = -1
         ultimo_erro_canal = 0
         canal_utilizado = -1
+        erros_canais = []
 
         for c_cand in canais_candidatos:
             if checar_cancelado and checar_cancelado():
@@ -698,9 +722,18 @@ def baixar_por_tempo_sdk(
                 break
             else:
                 ultimo_erro_canal = _sdk.NET_DVR_GetLastError()
+                erros_canais.append(ultimo_erro_canal)
                 print(f"[SDK] Canal {c_cand} falhou com {formatar_erro_sdk(ultimo_erro_canal)}. Tentando proximo canal...")
 
         if handle < 0:
+            if erros_canais and all(e == 4 for e in erros_canais):
+                raise CameraInvalidaError(
+                    f"Câmera {camera} inválida ou inexistente nesta DVR (código 4: NET_DVR_CHANNEL_ERROR nos canais {canais_candidatos})."
+                )
+            if ultimo_erro_canal == 34:
+                raise RuntimeError(
+                    f"Nenhuma gravação encontrada na DVR para a câmera {camera} no período solicitado ({inicio_dt.strftime('%d/%m/%Y %H:%M')} até {fim_dt.strftime('%H:%M')})."
+                )
             raise RuntimeError(
                 f"NET_DVR_GetFileByTime falhou para camera {camera} em todos os canais ({canais_candidatos}) - {formatar_erro_sdk(ultimo_erro_canal)}"
             )

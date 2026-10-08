@@ -67,8 +67,8 @@
     <section>
       <h2>Novo download</h2>
       <form id="formulario">
-        <label for="codigo_escola">Codigo escola</label>
-        <input id="codigo_escola" name="codigo_escola" list="lista_codigos" placeholder="Ex: 3140 (opcional)" autocomplete="off">
+        <label for="codigo_escola">Codigo da escola (obrigatorio)</label>
+        <input id="codigo_escola" name="codigo_escola" list="lista_codigos" placeholder="Ex: 3140" required autocomplete="off">
         <datalist id="lista_codigos"></datalist>
 
         <label for="escola">Nome da escola</label>
@@ -97,6 +97,9 @@
           <option value="isapi">ISAPI Web (Porta 80 HTTP)</option>
         </select>
         <button id="enviar" type="submit">Adicionar ao trabalhador</button>
+        <div class="aviso-rocket" style="margin-top:14px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; color:#1e40af; font-weight:700; text-align:center; font-family:system-ui,sans-serif; font-size:.92rem; box-shadow:0 1px 3px rgba(30,64,175,0.08);">
+          Sempre confira os dados no ROCKET 🚀
+        </div>
         <p id="mensagem" role="status"></p>
       </form>
     </section>
@@ -114,6 +117,9 @@
       <div id="jobs"><p class="empty">Carregando...</p></div>
     </section>
   </div>
+  <footer style="margin-top:40px; text-align:center; padding:22px 0; border-top:1px solid var(--line); color:var(--muted); font-family:system-ui,sans-serif; font-size:.95rem;">
+    <strong style="color:var(--ink);">Sempre confira os dados no ROCKET 🚀</strong>
+  </footer>
 </main>
 <script>
   const formulario = document.querySelector('#formulario');
@@ -324,6 +330,8 @@
     mensagem.style.color = 'var(--muted)';
     mensagem.textContent = 'Enviando...';
     try {
+      const codEscola = campo('codigo_escola');
+      if (!codEscola) throw new Error('O código da escola é obrigatório.');
       const ip = campo('dvr_ip');
       if (!ip) throw new Error('Informe o endereço IP da DVR.');
       const inicioLocal = campo('data_inicio');
@@ -333,7 +341,7 @@
       const dados = {
         dvr_ip: ip,
         escola: campo('escola'),
-        codigo_escola: campo('codigo_escola'),
+        codigo_escola: codEscola,
         usuario: campo('usuario') || 'admin',
         senha: campo('senha'),
         cameras: campo('cameras') || '1',
