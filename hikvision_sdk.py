@@ -194,11 +194,10 @@ assert NET_DVR_USER_LOGIN_INFO.byHttps.offset == 287, f"byHttps deve estar no of
 
 _sdk = None
 _sdk_carregado = False
-_hccore = None
 
 
 def carregar_sdk():
-    global _sdk, _sdk_carregado, _hccore
+    global _sdk, _sdk_carregado
     if _sdk_carregado:
         return _sdk is not None
 
@@ -230,7 +229,7 @@ def carregar_sdk():
     try:
         subpasta_com = os.path.join(diretorio_dll, "HCNetSDKCom")
         if sys.platform == "win32":
-            # Detecta instalacoes do iVMS-4200 para compartilhar DLLs de criptografia (libcrypto, libssl, hpr)
+            # Detecta instalacoes do iVMS-4200 para compartilhar DLLs de criptografia e suporte
             pastas_suporte = [diretorio_dll, subpasta_com]
             bases_prog = [
                 os.environ.get("ProgramFiles", r"C:\Program Files"),
@@ -259,37 +258,14 @@ def carregar_sdk():
                         except Exception:
                             pass
 
-            # Pre-carrega DLLs de criptografia e suporte essenciais para login moderno
-            dlls_criticas = (
-                "libcrypto-1_1-x64.dll", "libcrypto-1_1.dll", "libcrypto.dll",
-                "libssl-1_1-x64.dll", "libssl-1_1.dll", "libssl.dll",
-                "hpr.dll", "HCCore.dll", "PlayCtrl.dll",
-                "HCCoreDevCfg.dll", "HCGeneralCfgMgr.dll", "HCPlayBack.dll",
-                "StreamTransClient.dll", "SystemTransform.dll"
-            )
-            for p_dir in pastas_suporte:
-                if not os.path.isdir(p_dir):
-                    continue
-                for dll_nome in dlls_criticas:
-                    c_dll = os.path.join(p_dir, dll_nome)
-                    if os.path.isfile(c_dll):
-                        try:
-                            ctypes.WinDLL(c_dll)
-                        except Exception:
-                            pass
-
-            caminho_hccore = os.path.join(diretorio_dll, "HCCore.dll")
-            if os.path.isfile(caminho_hccore):
-                try:
-                    _hccore = ctypes.WinDLL(caminho_hccore)
-                    if hasattr(_hccore, "Core_IsDevLogin"):
-                        _hccore.Core_IsDevLogin.argtypes = [c_int]
-                        _hccore.Core_IsDevLogin.restype = c_int
-                    if hasattr(_hccore, "Core_GetDevLoginRetInfo"):
-                        _hccore.Core_GetDevLoginRetInfo.argtypes = [c_int, POINTER(NET_DVR_DEVICEINFO_V40)]
-                        _hccore.Core_GetDevLoginRetInfo.restype = c_int
-                except Exception as e_hccore:
-                    print(f"[SDK] Aviso ao carregar HCCore.dll: {e_hccore}")
+            # Pre-carrega APENAS bibliotecas de criptografia OpenSSL para disponibilizar simbolos TLS no processo
+            for dll_ssl in ("libcrypto-1_1-x64.dll", "libcrypto.dll", "libssl-1_1-x64.dll", "libssl.dll"):
+                c_ssl = os.path.join(diretorio_dll, dll_ssl)
+                if os.path.isfile(c_ssl):
+                    try:
+                        ctypes.WinDLL(c_ssl)
+                    except Exception:
+                        pass
 
             _sdk = ctypes.WinDLL(caminho_encontrado)
         else:
@@ -348,36 +324,41 @@ def carregar_sdk():
                 _sdk.NET_DVR_SetSDKInitCfg.argtypes = [c_int, ctypes.c_void_p]
                 _sdk.NET_DVR_SetSDKInitCfg.restype = c_int
 
+                # 1. NET_SDK_INIT_CFG_SDK_PATH = 2
                 sdk_path_cfg = NET_DVR_LOCAL_SDK_PATH()
+                ctypes.memset(byref(sdk_path_cfg), 0, ctypes.sizeof(sdk_path_cfg))
                 caminho_cfg = subpasta_com if os.path.isdir(subpasta_com) else diretorio_dll
-                c_bytes = caminho_cfg.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
-                ctypes.memmove(sdk_path_cfg.sPath, c_bytes, min(len(c_bytes), 255))
+                c_bytes = caminho_cfg.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
+                sdk_path_cfg.sPath = c_bytes
 
-                # NET_SDK_INIT_CFG_SDK_PATH = 2
-                res_cfg = _sdk.NET_DVR_SetSDKInitCfg(2, byref(sdk_path_cfg))
+                res_cfg = _sdk.NET_DVR_SetSDKInitCfg(2, ctypes.cast(byref(sdk_path_cfg), ctypes.c_void_p))
                 print(f"[SDK] NET_DVR_SetSDKInitCfg(SDK_PATH)={caminho_cfg} -> resultado: {res_cfg}")
+                sys.stdout.flush()
 
-                # NET_SDK_INIT_CFG_LIBEAY_PATH = 3 (libcrypto)
-                # NET_SDK_INIT_CFG_SSLEAY_PATH = 4 (libssl)
+                # 2. NET_SDK_INIT_CFG_LIBEAY_PATH = 3 (libcrypto)
                 caminho_crypto = os.path.join(diretorio_dll, "libcrypto-1_1-x64.dll")
                 if not os.path.isfile(caminho_crypto):
                     caminho_crypto = os.path.join(diretorio_dll, "libcrypto.dll")
                 if os.path.isfile(caminho_crypto):
-                    b_crypto = caminho_crypto.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
+                    b_crypto = caminho_crypto.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
                     buf_crypto = ctypes.create_string_buffer(b_crypto)
                     res_crypto = _sdk.NET_DVR_SetSDKInitCfg(3, ctypes.cast(buf_crypto, ctypes.c_void_p))
                     print(f"[SDK] NET_DVR_SetSDKInitCfg(LIBEAY_PATH)={caminho_crypto} -> resultado: {res_crypto}")
+                    sys.stdout.flush()
 
+                # 3. NET_SDK_INIT_CFG_SSLEAY_PATH = 4 (libssl)
                 caminho_ssl = os.path.join(diretorio_dll, "libssl-1_1-x64.dll")
                 if not os.path.isfile(caminho_ssl):
                     caminho_ssl = os.path.join(diretorio_dll, "libssl.dll")
                 if os.path.isfile(caminho_ssl):
-                    b_ssl = caminho_ssl.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
+                    b_ssl = caminho_ssl.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
                     buf_ssl = ctypes.create_string_buffer(b_ssl)
                     res_ssl = _sdk.NET_DVR_SetSDKInitCfg(4, ctypes.cast(buf_ssl, ctypes.c_void_p))
                     print(f"[SDK] NET_DVR_SetSDKInitCfg(SSLEAY_PATH)={caminho_ssl} -> resultado: {res_ssl}")
+                    sys.stdout.flush()
             except Exception as e_cfg:
                 print(f"[SDK] Aviso ao configurar NET_DVR_SetSDKInitCfg: {e_cfg}")
+                sys.stdout.flush()
 
         _sdk.NET_DVR_Init()
 
@@ -433,27 +414,9 @@ def _limpar_ip_e_porta(dvr_ip, porta_padrao=8000):
 
 def _extrair_info_dispositivo(user_id, dev_info_v40):
     """
-    Garante que a topologia e informacoes da DVR estejam preenchidas
-    e confirma com o HCCore se a sessao esta efetivamente autenticada.
+    Extrai topologia e numero de serie da DVR autenticada de dev_info_v40.
     """
-    global _hccore
-    if _hccore and hasattr(_hccore, "Core_IsDevLogin"):
-        # Garante que o Core marcou a sessao como autenticada antes de prosseguir
-        for _ in range(20):
-            if _hccore.Core_IsDevLogin(user_id) == 1:
-                break
-            time.sleep(0.05)
-
     dev_info = dev_info_v40.struDeviceV30
-    # Se os campos de canais vieram zerados, tenta obter via Core_GetDevLoginRetInfo
-    if dev_info.byChanNum == 0 and dev_info.byIPChanNum == 0 and _hccore and hasattr(_hccore, "Core_GetDevLoginRetInfo"):
-        try:
-            res_info = _hccore.Core_GetDevLoginRetInfo(user_id, byref(dev_info_v40))
-            if res_info == 1:
-                dev_info = dev_info_v40.struDeviceV30
-        except Exception:
-            pass
-
     serial = bytes(dev_info.sSerialNumber).split(b"\x00")[0].decode("latin1", errors="ignore").strip()
     return dev_info, serial
 
@@ -487,43 +450,56 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
 
         dev_info_v40 = NET_DVR_DEVICEINFO_V40()
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
+        sys.stdout.flush()
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+        sys.stdout.flush()
         if user_id >= 0:
             dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
             print(f"[SDK] Login V40 privado TLS bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
+            sys.stdout.flush()
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
             print(f"[SDK] Login V40 privado TLS falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando sem TLS...")
+            sys.stdout.flush()
 
         # 2. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta 8000 sem TLS direto)
         login_info.byHttps = 0      # 0 = Sem TLS
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
+        sys.stdout.flush()
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+        sys.stdout.flush()
         if user_id >= 0:
             dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
             print(f"[SDK] Login V40 privado TCP bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
+            sys.stdout.flush()
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
             print(f"[SDK] Login V40 privado TCP falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando modo autoadaptativo...")
+            sys.stdout.flush()
 
         # 3. Tentativa NET_DVR_Login_V40 (Modo 2 = Autoadaptativo, padrao iVMS-4200)
         login_info.byLoginMode = 2  # 2 = Self-adaptive
         login_info.byHttps = 2
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
+        sys.stdout.flush()
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+        sys.stdout.flush()
         if user_id >= 0:
             dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
             print(f"[SDK] Login V40 autoadaptativo bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
+            sys.stdout.flush()
             return user_id, dev_info_final
         else:
             ultimo_erro = _sdk.NET_DVR_GetLastError()
             print(f"[SDK] Login V40 autoadaptativo falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando fallback V30...")
+            sys.stdout.flush()
 
     # 4. Fallback para NET_DVR_Login_V30 (Padrao clássico para DVRs mais antigos)
     info_v30 = NET_DVR_DEVICEINFO_V30()
     ctypes.memset(byref(info_v30), 0, ctypes.sizeof(info_v30))
+    sys.stdout.flush()
     user_id = _sdk.NET_DVR_Login_V30(
         ip_limpo.encode("utf-8"),
         porta_num,
@@ -531,13 +507,16 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         senha.encode("utf-8"),
         byref(info_v30)
     )
+    sys.stdout.flush()
     if user_id >= 0:
         serial = bytes(info_v30.sSerialNumber).split(b"\x00")[0].decode("latin1", errors="ignore").strip()
         print(f"[SDK] Login V30 bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
+        sys.stdout.flush()
         return user_id, info_v30
     else:
         ultimo_erro = _sdk.NET_DVR_GetLastError()
         print(f"[SDK] Login V30 retornou {formatar_erro_sdk(ultimo_erro)}.")
+        sys.stdout.flush()
 
     # 5. Fallback adicional para V40 no modo ISAPI (conecta via HTTP/ISAPI na porta 80 caso a porta 8000 seja bloqueada no roteador/Mikrotik)
     if hasattr(_sdk, "NET_DVR_Login_V40"):
@@ -545,6 +524,7 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         for p_test in portas_isapi:
             try:
                 print(f"[SDK] Tentando login alternativo V40 ISAPI na porta {p_test}...")
+                sys.stdout.flush()
                 login_info = NET_DVR_USER_LOGIN_INFO()
                 ctypes.memset(byref(login_info), 0, ctypes.sizeof(login_info))
                 login_info.bUseAsynLogin = 0
@@ -557,10 +537,13 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
 
                 dev_info_v40 = NET_DVR_DEVICEINFO_V40()
                 ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
+                sys.stdout.flush()
                 user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
+                sys.stdout.flush()
                 if user_id >= 0:
                     dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
                     print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{p_test} (ID: {user_id}, Serial: {serial or 'N/A'})")
+                    sys.stdout.flush()
                     return user_id, dev_info_final
             except Exception:
                 pass

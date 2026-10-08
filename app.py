@@ -715,6 +715,9 @@ def baixar_pendentes_do_job(
                         if isinstance(erro_sdk, DownloadCancelado):
                             raise
                         print(f"[job {job_id}] Tentativa SDK falhou: {erro_sdk}")
+                        if modo_download == "sdk":
+                            # Se o modo for estritamente 'sdk', nao recorrer ao fallback ISAPI
+                            raise
                         print(f"[job {job_id}] Alternando para fallback ISAPI (porta 80) para garantir conclusao...")
 
                 # 2. Modo ISAPI (Porta 80) caso o SDK não tenha sido usado ou tenha falhado
