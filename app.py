@@ -1050,12 +1050,23 @@ def listar_jobs():
                 inicio_download = datetime.fromisoformat(j[9].replace("Z", "+00:00"))
                 if inicio_download.tzinfo is None:
                     inicio_download = inicio_download.replace(tzinfo=timezone.utc)
-                fim_download = datetime.fromisoformat(j[13].replace("Z", "+00:00")) if j[13] else datetime.now(timezone.utc)
+                if j[13]:
+                    fim_download = datetime.fromisoformat(j[13].replace("Z", "+00:00"))
+                elif j[7] in ("concluido", "cancelado", "erro", "sem_gravacoes"):
+                    # Se o job ja foi finalizado mas nao tinha finalizado_em registrado, congela
+                    fim_download = inicio_download
+                else:
+                    fim_download = datetime.now(timezone.utc)
                 if fim_download.tzinfo is None:
                     fim_download = fim_download.replace(tzinfo=timezone.utc)
                 tempo_segundos = max(0, int((fim_download - inicio_download).total_seconds()))
-            velocidade = bytes_baixados / tempo_segundos if tempo_segundos else 0
-            restante = max(0, int((bytes_total - bytes_baixados) / velocidade)) if (velocidade and bytes_total > bytes_baixados) else 0
+
+            if j[7] in ("concluido", "cancelado", "erro", "sem_gravacoes"):
+                velocidade = 0
+                restante = 0
+            else:
+                velocidade = bytes_baixados / tempo_segundos if tempo_segundos else 0
+                restante = max(0, int((bytes_total - bytes_baixados) / velocidade)) if (velocidade and bytes_total > bytes_baixados) else 0
             arquivos = banco.execute(
                 "SELECT camera, nome_trecho FROM gravacoes "
                 "WHERE job_id=? AND status='concluido' ORDER BY camera, nome_trecho",
@@ -1117,7 +1128,10 @@ def cancelar_job(job_id):
             return jsonify({"erro": "Job nao encontrado."}), 404
         if job[0] in ("concluido", "cancelado"):
             return jsonify({"erro": f"Job ja esta {job[0]}."}), 409
-        banco.execute("UPDATE jobs SET status='cancelado' WHERE id=?", (job_id,))
+        banco.execute(
+            "UPDATE jobs SET status='cancelado', finalizado_em=COALESCE(finalizado_em, CURRENT_TIMESTAMP) WHERE id=?",
+            (job_id,)
+        )
         banco.execute(
             "UPDATE gravacoes SET status='pendente' WHERE job_id=? AND status='baixando'",
             (job_id,),

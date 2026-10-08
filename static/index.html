@@ -173,7 +173,7 @@
       <div><strong>${job.escola || job.dvr_ip}</strong><small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong><span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
       <div class="progress-label"><span>${formatBytes(job.bytes_baixados)} / ${formatBytes(job.bytes_total)} (${job.progresso_percentual}%)</span><span>${formatSpeed(job.bytes_por_segundo)}</span></div>
       <progress max="100" value="${job.progresso_percentual}"></progress>
-      <small>Tempo: ${formatDuration(job.tempo_segundos)} | Restante estimado: ${formatDuration(job.segundos_restantes)}</small>
+      <small>${job.status === 'cancelado' ? `Tempo decorrido: ${formatDuration(job.tempo_segundos)} | Cancelado` : (job.status === 'concluido' ? `Tempo total: ${formatDuration(job.tempo_segundos)} | Concluido` : `Tempo: ${formatDuration(job.tempo_segundos)} | Restante estimado: ${formatDuration(job.segundos_restantes)}`)}</small>
       ${job.trecho_atual ? `<div class="progress-label"><span>Trecho atual: camera ${job.camera_atual}</span><span>${job.status === 'erro' ? 'verificar' : job.status}</span></div>` : ''}
       ${job.erro_atual ? `<p class="job-error">Falha: ${job.erro_atual}</p>` : ''}
       ${job.erro_detalhe ? `<p class="job-error">Detalhe: ${job.erro_detalhe}</p>` : ''}
