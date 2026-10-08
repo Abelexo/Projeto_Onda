@@ -756,13 +756,33 @@ def baixar_pendentes_do_job(
                 if not sucesso_download:
                     atualizar_status_job("baixando", protocolo="ISAPI")
                     try:
-                        baixar_um_trecho(
-                            dvr_ip, auth, uri, origem, tamanho,
-                            camera=camera, data_inicio_pedido=data_inicio,
-                            data_fim_pedido=data_fim, usuario=auth.username, senha=auth.password,
-                            atualizar_progresso=atualizar_progresso,
-                            checar_cancelado=lambda: job_foi_cancelado(job_id),
-                        )
+                        if uri.startswith("sdk://"):
+                            print(f"[job {job_id}] Buscando trechos via ISAPI search na porta 80...")
+                            encontrou = buscar_gravacoes(
+                                dvr_ip, auth, camera, data_inicio, data_fim, job_id,
+                                checar_cancelado=lambda: job_foi_cancelado(job_id)
+                            )
+                            if not encontrou:
+                                raise RuntimeError(f"Fallback ISAPI nao encontrou gravacoes para a camera {camera}.")
+                            with banco_lock:
+                                banco.execute(
+                                    "DELETE FROM gravacoes WHERE job_id=? AND camera=? AND nome_trecho=?",
+                                    (job_id, camera, nome_trecho)
+                                )
+                                banco.commit()
+                            baixar_pendentes_do_job(
+                                job_id, dvr_ip, auth, escola, codigo_escola, data_inicio, data_fim,
+                                atualizar_status_job, modo_download="isapi", porta_sdk=porta_sdk,
+                            )
+                            return
+                        else:
+                            baixar_um_trecho(
+                                dvr_ip, auth, uri, origem, tamanho,
+                                camera=camera, data_inicio_pedido=data_inicio,
+                                data_fim_pedido=data_fim, usuario=auth.username, senha=auth.password,
+                                atualizar_progresso=atualizar_progresso,
+                                checar_cancelado=lambda: job_foi_cancelado(job_id),
+                            )
                     except hikvision_sdk.CameraInvalidaError as e_invalida_isapi:
                         msg_invalida = str(e_invalida_isapi)
                         print(f"[job {job_id}] Câmera inválida detectada no ISAPI: {msg_invalida}")
@@ -884,11 +904,28 @@ def processar_job(job):
             banco.commit()
 
     atualizar_status_job("buscando")
-    for camera in cameras:
-        if job_foi_cancelado(job_id):
-            return
-        # PRIORIDADE TOTAL AO SDK em modo 'auto' ou 'sdk':
-        if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
+
+    # 1. Avalia se o SDK (porta 8000) autentica nesta DVR
+    usar_sdk = False
+    if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
+        print(f"[job {job_id}] Testando autenticacao SDK (porta {porta_sdk}) em {dvr_ip}...")
+        u_id, d_info = hikvision_sdk._fazer_login(dvr_ip, porta_sdk, usuario, senha)
+        if u_id >= 0:
+            usar_sdk = True
+            hikvision_sdk._sdk.NET_DVR_Logout_V30(u_id)
+            print(f"[job {job_id}] SDK autenticado com sucesso na porta {porta_sdk}! Prioridade SDK ativa.")
+        else:
+            print(f"[job {job_id}] SDK nao autenticou na porta {porta_sdk} ({dvr_ip}).")
+            if modo_download == "sdk":
+                atualizar_status_job("erro", detalhe=f"Falha de autenticacao SDK na porta {porta_sdk} ({dvr_ip}).")
+                return
+            print(f"[job {job_id}] Modo auto: alternando para ISAPI (porta 80 HTTP)...")
+
+    if usar_sdk:
+        atualizar_status_job("buscando", protocolo="SDK")
+        for camera in cameras:
+            if job_foi_cancelado(job_id):
+                return
             dt_ini_loc = horario_dvr_local(data_inicio)
             dt_fim_loc = horario_dvr_local(data_fim)
             dur_seg = max(1.0, (dt_fim_loc - dt_ini_loc).total_seconds())
@@ -904,9 +941,13 @@ def processar_job(job):
                      f"sdk://{dvr_ip}:{porta_sdk}/ch{camera}", tam_estimado)
                 )
                 banco.commit()
-            print(f"[job {job_id}] Prioridade SDK ativa: cadastrado intervalo direto para camera {camera}: {dt_ini_loc.strftime('%H:%M:%S')} ate {dt_fim_loc.strftime('%H:%M:%S')}")
-        else:
-            # Modo estritamente 'isapi' ou quando o SDK nao estiver disponivel
+            print(f"[job {job_id}] Cadastrado intervalo para download direto via SDK camera {camera}: {dt_ini_loc.strftime('%H:%M:%S')} ate {dt_fim_loc.strftime('%H:%M:%S')}")
+    else:
+        # Fallback ISAPI (porta 80 HTTP)
+        atualizar_status_job("buscando", protocolo="ISAPI")
+        for camera in cameras:
+            if job_foi_cancelado(job_id):
+                return
             try:
                 buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id, checar_cancelado=lambda: job_foi_cancelado(job_id))
             except hikvision_sdk.CameraInvalidaError as e_invalida_busca:
@@ -928,7 +969,9 @@ def processar_job(job):
         print(f"[job {job_id}] {detalhe}")
         atualizar_status_job("sem_gravacoes", detalhe)
         return
-    atualizar_status_job("baixando")
+
+    proto_final = "SDK" if usar_sdk else "ISAPI"
+    atualizar_status_job("baixando", protocolo=proto_final)
     baixar_pendentes_do_job(
         job_id, dvr_ip, auth, escola, codigo_escola, data_inicio, data_fim,
         atualizar_status_job, modo_download=modo_download, porta_sdk=porta_sdk,

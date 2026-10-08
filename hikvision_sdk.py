@@ -523,36 +523,6 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         print(f"[SDK] Login V30 retornou {formatar_erro_sdk(ultimo_erro)}.")
         sys.stdout.flush()
 
-    # 5. Fallback adicional para V40 no modo ISAPI (conecta via HTTP/ISAPI na porta 80 caso a porta 8000 seja bloqueada no roteador/Mikrotik)
-    if hasattr(_sdk, "NET_DVR_Login_V40"):
-        portas_isapi = [80, 8080] if porta_num != 80 else [80]
-        for p_test in portas_isapi:
-            try:
-                print(f"[SDK] Tentando login alternativo V40 ISAPI na porta {p_test}...")
-                sys.stdout.flush()
-                login_info = NET_DVR_USER_LOGIN_INFO()
-                ctypes.memset(byref(login_info), 0, ctypes.sizeof(login_info))
-                login_info.bUseAsynLogin = 0
-                login_info.wPort = p_test
-                login_info.byLoginMode = 1  # 1 = ISAPI
-                login_info.byHttps = 0
-                login_info.sDeviceAddress = ip_limpo.encode("utf-8")[:128]
-                login_info.sUserName = usuario.encode("utf-8")[:63]
-                login_info.sPassword = senha.encode("utf-8")[:63]
-
-                dev_info_v40 = NET_DVR_DEVICEINFO_V40()
-                ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
-                sys.stdout.flush()
-                user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
-                sys.stdout.flush()
-                if user_id >= 0:
-                    dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
-                    print(f"[SDK] Login V40 ISAPI bem-sucedido na DVR {ip_limpo}:{p_test} (ID: {user_id}, Serial: {serial or 'N/A'})")
-                    sys.stdout.flush()
-                    return user_id, dev_info_final
-            except Exception:
-                pass
-
     return -1, None
 
 
@@ -739,9 +709,11 @@ def baixar_por_tempo_sdk(
             )
 
         try:
-            # Monitoramento do progresso da transmissao
+            # Monitoramento do progresso da transmissao com watchdog anti-travamento
             tempo_inicio = time.time()
             tentativas_iniciais_negativas = 0
+            ultimo_pos = -1
+            ultimo_avanco = time.time()
 
             while True:
                 if checar_cancelado and checar_cancelado():
@@ -772,6 +744,16 @@ def baixar_por_tempo_sdk(
                     raise RuntimeError(
                         f"Download SDK falhou durante transmissao (posicao: {pos}, {formatar_erro_sdk(cod_erro_pos)})"
                     )
+
+                if pos > ultimo_pos:
+                    ultimo_pos = pos
+                    ultimo_avanco = time.time()
+                elif pos == 0 and (time.time() - tempo_inicio > 20.0):
+                    # Se após 20s a DVR conectou mas não enviou nenhum fluxo de dados
+                    raise RuntimeError("Timeout no download SDK: a DVR abriu o canal mas não transmitiu fluxo de vídeo após 20s.")
+                elif time.time() - ultimo_avanco > 60.0:
+                    # Se a transmissão congelou na mesma porcentagem por mais de 60s
+                    raise RuntimeError(f"Timeout no download SDK: transmissão congelada em {pos}% por mais de 60s.")
 
                 if callback_progresso and pos >= 0:
                     callback_progresso(pos)
