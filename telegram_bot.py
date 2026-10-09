@@ -100,6 +100,21 @@ def conectar_db():
     return conn
 
 
+def enviar_mensagem_telegram(chat_id, texto, reply_to_message_id=None):
+    """Envia mensagem no Telegram de forma segura sem travar o Flask."""
+    if TELEGRAM_BOT_TOKEN:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            payload = {"chat_id": chat_id, "text": texto, "parse_mode": "HTML"}
+            if reply_to_message_id:
+                payload["reply_to_message_id"] = reply_to_message_id
+            requests.post(url, json=payload, timeout=5)
+            return True
+        except Exception as e:
+            print(f"[TelegramBot] Aviso ao enviar mensagem via bot API: {e}")
+    return False
+
+
 def extrair_dados_gemini(texto_mensagem, solicitante=""):
     """
     Envia a mensagem informal para a API do Google Gemini com prompt estruturado

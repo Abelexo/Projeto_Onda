@@ -12,13 +12,15 @@
     header { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:30px; }
     h1 { font-size:clamp(2rem,5vw,4.2rem); line-height:.95; margin:0; letter-spacing:0; max-width:600px; }
     header p { max-width:310px; margin:0; color:var(--muted); }
-    .layout { display:grid; grid-template-columns:minmax(280px, .8fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
-    section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; }
+    .layout { display:grid; grid-template-columns:minmax(320px, .9fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
+    section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; min-width:0; }
     h2 { margin:0 0 18px; font-size:1.35rem; }
     label { display:block; color:var(--muted); font:700 .78rem/1.2 system-ui,sans-serif; letter-spacing:.04em; text-transform:uppercase; margin:14px 0 6px; }
-    input, button { width:100%; min-height:44px; border:1px solid #bec9bf; padding:10px 12px; font:16px system-ui,sans-serif; border-radius:4px; }
+    input, button { width:100%; min-height:44px; border:1px solid #bec9bf; padding:10px 12px; font:16px system-ui,sans-serif; border-radius:4px; box-sizing:border-box; }
     input:focus { outline:2px solid #a8d3c0; border-color:var(--accent); }
-    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .row { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; }
+    .row > div { min-width:0; }
+    input[type="datetime-local"] { width:100%; box-sizing:border-box; font-size:.84rem; padding:8px 6px; min-height:42px; }
     button { margin-top:20px; border-color:var(--accent); background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
     button:hover { background:var(--accent-dark); }
     button:disabled { opacity:.6; cursor:wait; }
@@ -34,7 +36,7 @@
     .status[data-status="convertendo"] { color:#245b78; background:#d9edf7; }
     .status[data-status="cancelado"] { color:#5f6368; background:#e5e7e9; }
     .status[data-status="sem_gravacoes"] { color:#6b5a26; background:#f5edc8; }
-    .job-time { display:block; overflow-wrap:anywhere; }
+    .job-time { display:block; overflow-wrap:anywhere; word-break:break-word; max-width:100%; margin:3px 0; }
     .progress-label { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; margin-top:12px; color:var(--muted); font:700 .75rem system-ui,sans-serif; }
     .progress-label span { min-width:0; overflow-wrap:anywhere; }
     progress { width:100%; height:10px; accent-color:var(--accent); }
@@ -64,16 +66,31 @@
     .badge-pendente.tem-pendente { background:var(--danger); animation:pulse 2s infinite; }
     @keyframes pulse { 0% { opacity:1; } 50% { opacity:0.6; } 100% { opacity:1; } }
 
-    /* Cards e Tabela da Aba Telegram */
-    .card-tg { background:#fff; border:1px solid var(--line); border-radius:6px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.03); display:grid; gap:10px; margin-bottom:12px; }
-    .card-tg-header { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; }
-    .card-tg-body { font-family:system-ui,sans-serif; font-size:.92rem; color:var(--ink); }
-    .card-tg-orig { font-size:.84rem; color:var(--muted); background:#f9fafb; padding:8px 12px; border-radius:4px; border:1px dashed #d1d5db; margin-top:6px; }
+    /* Cards e Acordeao da Aba Solicitacoes */
+    .card-tg { background:#fff; border:1px solid var(--line); border-radius:6px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.03); overflow:hidden; }
+    .card-tg-summary { padding:14px 18px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; background:#fff; list-style:none; user-select:none; }
+    .card-tg-summary::-webkit-details-marker { display:none; }
+    .card-tg-summary:hover { background:rgba(0,0,0,0.015); }
+    .card-tg[open] > .card-tg-summary { border-bottom:1px solid var(--line); background:#fafafa; }
+    .seta-tg { display:inline-block; transition:transform .2s; font-size:.72rem; color:var(--muted); margin-right:6px; }
+    .card-tg[open] .seta-tg { transform:rotate(90deg); }
+    
+    .card-tg-body { padding:18px; display:grid; gap:14px; font-family:system-ui,sans-serif; font-size:.9rem; }
+    .card-tg-orig { font-size:.84rem; color:var(--muted); background:#f9fafb; padding:8px 12px; border-radius:4px; border:1px dashed #d1d5db; }
     .card-tg-orig summary { cursor:pointer; font-weight:600; color:var(--muted); }
-    .form-acao-tg { display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:#f4fbf7; padding:12px 14px; border-radius:6px; border:1px solid #cce8dc; margin-top:6px; }
-    .form-acao-tg input { min-height:38px; padding:6px 10px; font-size:.9rem; width:auto; flex:1; min-width:140px; margin:0; }
-    .btn-baixar-tg { width:auto; min-height:38px; margin:0; padding:6px 16px; font-size:.88rem; }
-    .btn-descartar-tg { width:auto; min-height:38px; margin:0; padding:6px 12px; border:1px solid #d1d5db; background:#fff; color:var(--muted); font-size:.85rem; border-radius:4px; cursor:pointer; }
+
+    .secao-alterar { border:1px dashed #d1d5db; border-radius:6px; padding:10px 14px; background:#fbfbfc; }
+    .secao-alterar summary { cursor:pointer; font-weight:700; color:var(--accent-dark); font-size:.85rem; user-select:none; }
+    .grid-alterar { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-top:10px; }
+    .grid-alterar label { margin:0 0 4px; font-size:.72rem; }
+    .grid-alterar input { min-height:36px; padding:6px 8px; font-size:.85rem; border-radius:4px; margin:0; width:100%; box-sizing:border-box; }
+
+    .form-acao-tg { display:grid; grid-template-columns:1.2fr 1fr auto auto; gap:12px; align-items:end; background:#f4fbf7; padding:14px; border-radius:6px; border:1px solid #cce8dc; }
+    @media (max-width:820px) { .form-acao-tg { grid-template-columns:1fr; } }
+    .form-acao-tg label { margin:0 0 4px; font-size:.72rem; font-weight:700; }
+    .form-acao-tg input { min-height:42px; padding:8px 12px; font-size:.9rem; margin:0; width:100%; box-sizing:border-box; border-radius:4px; }
+    .btn-baixar-tg { min-height:42px; margin:0; padding:8px 18px; font-size:.88rem; white-space:nowrap; border-radius:4px; font-weight:700; }
+    .btn-descartar-tg { min-height:42px; margin:0; padding:8px 12px; border:1px solid #d1d5db; background:#fff; color:var(--muted); border-radius:4px; cursor:pointer; white-space:nowrap; font-size:.85rem; }
     .btn-descartar-tg:hover { border-color:var(--danger); color:var(--danger); background:#fef2f2; }
     
     @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } }
@@ -83,13 +100,13 @@
 <main>
   <header>
     <h1>Central de gravacoes</h1>
-    <p>Cadastre um periodo ou receba direto do Telegram. O trabalhador baixa sem precisar manter a pagina aberta.</p>
+    <p>Cadastre um periodo ou acompanhe pedidos. O trabalhador baixa sem precisar manter a pagina aberta.</p>
   </header>
 
   <nav class="abas-navegacao">
     <button type="button" class="btn-aba ativa" data-alvo="painel-downloads">📥 Central de Downloads</button>
     <button type="button" class="btn-aba" data-alvo="painel-telegram">
-      🤖 Solicitações Telegram
+      Solicitações
       <span id="badge-telegram" class="badge-pendente" style="display:none;">0</span>
     </button>
   </nav>
@@ -152,10 +169,10 @@
   </div> <!-- fim #painel-downloads -->
 
   <section id="painel-telegram" style="display:none; background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; gap:12px;">
       <div>
-        <h2 style="margin:0 0 4px;">Solicitações do Telegram (Bot & Gemini)</h2>
-        <p id="telegram-status" style="margin:0; font-size:.85rem; color:var(--muted); font-family:system-ui,sans-serif;">Verificando conexão com o Telegram...</p>
+        <h2 style="margin:0 0 2px;">Solicitações</h2>
+        <p id="telegram-status" style="margin:0; font-size:.88rem; color:var(--accent); font-weight:700;">● Online</p>
       </div>
       <div style="display:flex; gap:8px;">
         <button type="button" id="btn-recarregar-telegram" style="width:auto; min-height:36px; padding:6px 14px; margin-top:0; background:#fff; color:var(--ink); border:1px solid #bec9bf; font-size:.85rem;">🔄 Atualizar lista</button>
@@ -543,12 +560,11 @@
 
       if (statusTelegramEl) {
         if (statusTg.ativo) {
-          const usr = statusTg.usuario_conectado ? `${statusTg.usuario_conectado} (${statusTg.username ? '@' + statusTg.username : ''})` : 'Conta do Telegram';
-          statusTelegramEl.innerHTML = `<span style="color:var(--accent); font-weight:700;">● Online</span> | Conectado como: <strong>${usr}</strong> | Gemini: <strong>${statusTg.modelo_gemini}</strong> | Pendentes hoje: <strong>${pendentes}</strong>`;
+          statusTelegramEl.innerHTML = `<span style="color:var(--accent); font-weight:700;">● Online</span>`;
         } else if (!statusTg.sessao_autenticada) {
-          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">⚠️ Aguardando Login</span> | Execute <code>python autenticar_telegram.py</code> no terminal para autenticar sua conta.`;
+          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">⚠️ Aguardando Login</span>`;
         } else {
-          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">○ Inativo</span> | ${statusTg.ultimo_erro || 'Verifique o arquivo .env'}`;
+          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">○ Inativo</span>`;
         }
       }
 
@@ -557,6 +573,25 @@
       console.warn('Erro ao atualizar Telegram:', e);
     }
   }
+
+  const formatarParaInputLocal = isoStr => {
+    if (!isoStr) return '';
+    try {
+      if (isoStr.length >= 16 && isoStr.includes('T')) {
+        return isoStr.slice(0, 16);
+      }
+      const d = new Date(isoStr);
+      if (Number.isNaN(d.getTime())) return '';
+      const ano = d.getFullYear();
+      const mes = String(d.getMonth() + 1).padStart(2, '0');
+      const dia = String(d.getDate()).padStart(2, '0');
+      const hora = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${ano}-${mes}-${dia}T${hora}:${min}`;
+    } catch {
+      return '';
+    }
+  };
 
   function renderizarSolicitacoesTelegram() {
     if (!listaTelegramEl) return;
@@ -572,11 +607,20 @@
       return;
     }
 
+    // Preserva quais cards o usuario ja tinha aberto para nao fecha-los ao atualizar a cada 5s
+    const idsAbertos = new Set();
+    listaTelegramEl.querySelectorAll('details.card-tg[open]').forEach(det => {
+      if (det.dataset.id) idsAbertos.add(det.dataset.id);
+    });
+
     const fragment = document.createDocumentFragment();
     lista.forEach(item => {
-      const card = document.createElement('article');
+      const card = document.createElement('details');
       card.className = 'card-tg';
-      card.dataset.id = item.id;
+      card.dataset.id = String(item.id);
+      if (idsAbertos.has(String(item.id))) {
+        card.open = true;
+      }
 
       let badgeCor = 'background:#fef3c7; color:#92400e;';
       let textoStatus = 'Aguardando IP';
@@ -595,45 +639,76 @@
       }
 
       card.innerHTML = `
-        <div class="card-tg-header">
-          <div>
-            <strong style="font-size:1.05rem;">${item.nome_escola || 'Escola ' + (item.codigo_escola || 'não informada')}</strong>
-            <span style="color:var(--muted); font-size:.85rem; margin-left:8px;">Código: <strong>${item.codigo_escola || '-'}</strong></span>
+        <summary class="card-tg-summary">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="seta-tg">▶</span>
+            <strong style="font-size:1.02rem;">${item.nome_escola || 'Escola ' + (item.codigo_escola || 'não informada')}</strong>
+            <span style="color:var(--muted); font-size:.82rem;">(Cód: <strong>${item.codigo_escola || '-'}</strong>)</span>
           </div>
-          <span style="padding:3px 10px; border-radius:12px; font-weight:700; font-size:.78rem; ${badgeCor}">${textoStatus}</span>
-        </div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <span style="color:var(--muted); font-size:.82rem;">📹 Câm ${item.cameras || '1'} | 🕒 ${mostrarData(item.data_inicio)} até ${mostrarData(item.data_fim)}</span>
+            <span style="padding:3px 10px; border-radius:12px; font-weight:700; font-size:.78rem; ${badgeCor}">${textoStatus}</span>
+          </div>
+        </summary>
 
         <div class="card-tg-body">
-          <div style="display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 8px;">
-            <span>📹 Câmeras: <strong>${item.cameras || '1'}</strong></span>
-            <span>🕒 Período: <strong>${mostrarData(item.data_inicio)} até ${mostrarData(item.data_fim)}</strong></span>
-            <span>👤 Solicitante: <strong>${item.solicitante || 'Telegram'}</strong></span>
-            <span>📅 Recebido: <small style="color:var(--muted);">${mostrarData(item.recebido_em)}</small></span>
+          <div style="display:flex; flex-wrap:wrap; gap:16px; color:var(--muted); font-size:.85rem;">
+            <span>👤 Solicitante: <strong style="color:var(--ink);">${item.solicitante || 'Telegram'}</strong></span>
+            <span>📅 Recebido em: <strong style="color:var(--ink);">${mostrarData(item.recebido_em)}</strong></span>
+            ${item.dvr_ip ? `<span>🌐 DVR IP: <strong style="color:var(--ink);">${item.dvr_ip}</strong></span>` : ''}
           </div>
 
           <details class="card-tg-orig">
-            <summary>Ver mensagem original recebida no Telegram</summary>
+            <summary>Ver mensagem original recebida</summary>
             <p style="margin:6px 0 0; font-style:italic; white-space:pre-wrap;">"${item.mensagem_original}"</p>
+          </details>
+
+          <details class="secao-alterar">
+            <summary>✏️ Alterar informações da gravação</summary>
+            <div class="grid-alterar">
+              <div>
+                <label>Câmeras</label>
+                <input type="text" class="edit-cameras" value="${item.cameras || '1'}" placeholder="Ex: 1,2">
+              </div>
+              <div>
+                <label>Data/Hora Início</label>
+                <input type="datetime-local" class="edit-inicio" value="${formatarParaInputLocal(item.data_inicio)}">
+              </div>
+              <div>
+                <label>Data/Hora Fim</label>
+                <input type="datetime-local" class="edit-fim" value="${formatarParaInputLocal(item.data_fim)}">
+              </div>
+              <div>
+                <label>Código Escola</label>
+                <input type="text" class="edit-codigo" value="${item.codigo_escola || ''}">
+              </div>
+              <div>
+                <label>Nome Escola</label>
+                <input type="text" class="edit-nome" value="${item.nome_escola || ''}">
+              </div>
+            </div>
           </details>
 
           ${item.status === 'aguardando_ip' ? `
             <div class="form-acao-tg" data-solic-id="${item.id}">
-              <div style="flex:1; min-width:180px;">
-                <label style="margin:0 0 4px; font-size:.72rem;">Endereço IP da DVR</label>
+              <div>
+                <label>Endereço IP da DVR</label>
                 <input type="text" class="input-ip" placeholder="Ex: 192.168.1.10" value="${item.dvr_ip || ''}">
               </div>
-              <div style="width:140px;">
-                <label style="margin:0 0 4px; font-size:.72rem;">Senha da DVR</label>
-                <input type="password" class="input-senha" placeholder="Opcional">
+              <div>
+                <label>Senha da DVR</label>
+                <input type="password" class="input-senha" placeholder="Senha da DVR" value="IINms4562022">
               </div>
-              <div style="display:flex; gap:6px; align-items:flex-end;">
+              <div>
                 <button type="button" class="btn-baixar-tg" onclick="iniciarSolicitacao(${item.id}, this)">▶ Baixar e Salvar IP</button>
+              </div>
+              <div>
                 <button type="button" class="btn-descartar-tg" onclick="descartarSolicitacao(${item.id}, this)">✕ Descartar</button>
               </div>
             </div>
           ` : `
-            <div style="margin-top:8px; font-size:.85rem; color:var(--muted); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-              <span>DVR IP: <strong>${item.dvr_ip || '-'}</strong> ${item.job_id ? `| Job #${item.job_id}` : ''}</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-top:6px; border-top:1px solid var(--line);">
+              <span>Job ID: <strong>#${item.job_id || '-'}</strong> | Status: <strong>${textoStatus}</strong></span>
               ${item.job_id ? `<button type="button" class="btn-filtro" style="margin:0;" onclick="irParaJob(${item.job_id})">Ver progresso na Central ➔</button>` : ''}
             </div>
           `}
@@ -651,7 +726,7 @@
     const card = botao.closest('.card-tg');
     const inputIp = card.querySelector('.input-ip');
     const inputSenha = card.querySelector('.input-senha');
-    const ip = inputIp.value.trim();
+    const ip = inputIp ? inputIp.value.trim() : '';
     const senha = inputSenha ? inputSenha.value.trim() : '';
 
     if (!ip) {
@@ -660,13 +735,30 @@
       return;
     }
 
+    // Coleta dados opcionais caso o usuario tenha editado em "Alterar informacoes da gravacao"
+    const editCams = card.querySelector('.edit-cameras')?.value.trim();
+    const editIni = card.querySelector('.edit-inicio')?.value.trim();
+    const editFim = card.querySelector('.edit-fim')?.value.trim();
+    const editCod = card.querySelector('.edit-codigo')?.value.trim();
+    const editNome = card.querySelector('.edit-nome')?.value.trim();
+
+    const payload = {
+      dvr_ip: ip,
+      senha: senha,
+      cameras: editCams,
+      codigo_escola: editCod,
+      nome_escola: editNome
+    };
+    if (editIni) payload.data_inicio = iso(editIni);
+    if (editFim) payload.data_fim = iso(editFim);
+
     botao.disabled = true;
     botao.textContent = 'Iniciando...';
     try {
       const res = await fetch(`/api/telegram/solicitacoes/${id}/iniciar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dvr_ip: ip, senha: senha })
+        body: JSON.stringify(payload)
       });
       const dados = await res.json();
       if (!res.ok) throw new Error(dados.erro || 'Erro ao iniciar download');
@@ -682,7 +774,7 @@
   }
 
   async function descartarSolicitacao(id, botao) {
-    if (!confirm('Deseja realmente descartar esta solicitação do Telegram?')) return;
+    if (!confirm('Deseja realmente descartar esta solicitação?')) return;
     botao.disabled = true;
     try {
       const res = await fetch(`/api/telegram/solicitacoes/${id}/descartar`, { method: 'POST' });
@@ -702,6 +794,7 @@
   carregarCatalogoEscolas();
   atualizarJobs(); setInterval(atualizarJobs, 5000);
   atualizarTelegram(); setInterval(atualizarTelegram, 5000);
+
 </script>
 </body>
 </html>

@@ -1409,9 +1409,11 @@ def iniciar_solicitacao_telegram(solic_id):
 
         senha_final = senha_req or senha_cadastrada or os.environ.get("DVR_SENHA_PADRAO", "")
         usuario_final = usuario_req or usuario_cadastrado or "admin"
-        cams_final = cameras_req or str(dados_solic.get("cameras") or "1").strip()
-        data_ini = dados_solic.get("data_inicio")
-        data_fim = dados_solic.get("data_fim")
+        cams_final = cameras_req or str(dados.get("cameras") or dados_solic.get("cameras") or "1").strip()
+        data_ini = str(dados.get("data_inicio", "")).strip() or dados_solic.get("data_inicio")
+        data_fim = str(dados.get("data_fim", "")).strip() or dados_solic.get("data_fim")
+        nome_escola = str(dados.get("nome_escola", "")).strip() or nome_escola
+        cod_escola = str(dados.get("codigo_escola", "")).strip() or cod_escola
 
         if cod_escola:
             banco.execute("""
@@ -1433,9 +1435,10 @@ def iniciar_solicitacao_telegram(solic_id):
 
         banco.execute("""
             UPDATE solicitacoes_telegram
-            SET dvr_ip=?, status='baixando', job_id=?, processado_em=CURRENT_TIMESTAMP
+            SET dvr_ip=?, status='baixando', job_id=?, processado_em=CURRENT_TIMESTAMP,
+                cameras=?, data_inicio=?, data_fim=?, nome_escola=?, codigo_escola=?
             WHERE id=?
-        """, (ip_final, novo_job_id, solic_id))
+        """, (ip_final, novo_job_id, cams_final, data_ini, data_fim, nome_escola, cod_escola, solic_id))
         banco.commit()
 
     if telegram_bot.TELEGRAM_GROUP_ID:
