@@ -44,15 +44,20 @@ def carregar_env(caminho_env=None):
         caminho_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if os.path.isfile(caminho_env):
         try:
-            with open(caminho_env, "r", encoding="utf-8") as f:
+            try:
+                from dotenv import load_dotenv
+                load_dotenv(caminho_env, override=True)
+            except ImportError:
+                pass
+            with open(caminho_env, "r", encoding="utf-8-sig") as f:
                 for linha in f:
                     linha = linha.strip()
                     if not linha or linha.startswith("#") or "=" not in linha:
                         continue
                     chave, valor = linha.split("=", 1)
-                    chave = chave.strip()
+                    chave = chave.lstrip("\ufeff").strip()
                     valor = valor.strip().strip("'\"")
-                    if chave and chave not in os.environ:
+                    if chave:
                         os.environ[chave] = valor
         except Exception as e:
             print(f"[TelegramBot] Aviso ao carregar .env: {e}")

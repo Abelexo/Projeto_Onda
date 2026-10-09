@@ -21,15 +21,20 @@ from telethon.sync import TelegramClient
 caminho_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 if os.path.isfile(caminho_env):
     try:
-        with open(caminho_env, "r", encoding="utf-8") as f:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(caminho_env, override=True)
+        except ImportError:
+            pass
+        with open(caminho_env, "r", encoding="utf-8-sig") as f:
             for linha in f:
                 linha = linha.strip()
                 if not linha or linha.startswith("#") or "=" not in linha:
                     continue
                 k, v = linha.split("=", 1)
-                k = k.strip()
+                k = k.lstrip("\ufeff").strip()
                 v = v.strip().strip("'\"")
-                if k and k not in os.environ:
+                if k:
                     os.environ[k] = v
     except Exception as e:
         print(f"Aviso ao carregar .env: {e}")
