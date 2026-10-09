@@ -1344,7 +1344,97 @@ def servir_gravacao(job_id, camera, nome_trecho):
         ).fetchone()
     if not resultado or not resultado[0] or not os.path.isfile(resultado[0]):
         return jsonify({"erro": "Gravacao ainda nao esta disponivel."}), 404
-    return send_file(resultado[0], mimetype="video/mp4", conditional=True)
+    resp = send_file(resultado[0], mimetype="video/mp4", conditional=True)
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
+@app.route("/api/estatisticas", methods=["GET"])
+def obter_estatisticas():
+    with banco_lock:
+        # 1. Unidades / Escolas
+        total_escolas = banco.execute("SELECT COUNT(*) FROM escolas").fetchone()[0] or 0
+        escolas_com_ip = banco.execute("SELECT COUNT(*) FROM escolas WHERE dvr_ip IS NOT NULL AND TRIM(dvr_ip) != ''").fetchone()[0] or 0
+        escolas_sem_ip = total_escolas - escolas_com_ip
+
+        # Lista de escolas com contagem de gravações
+        query_escolas = """
+            SELECT e.codigo, e.nome, e.cidade, e.dvr_ip,
+                   COUNT(g.nome_trecho) as total_gravacoes
+            FROM escolas e
+            LEFT JOIN jobs j ON j.codigo_escola = e.codigo
+            LEFT JOIN gravacoes g ON g.job_id = j.id AND g.status = 'concluido'
+            GROUP BY e.codigo
+            ORDER BY total_gravacoes DESC, e.nome ASC
+        """
+        linhas_escolas = banco.execute(query_escolas).fetchall()
+        lista_escolas = [
+            {
+                "codigo": r[0], "nome": r[1], "cidade": r[2] or "",
+                "dvr_ip": r[3] or "", "gravacoes": r[4] or 0
+            }
+            for r in linhas_escolas
+        ]
+
+        # 2. Top 5 escolas com mais gravações
+        top5 = [e for e in lista_escolas if e["gravacoes"] > 0][:5]
+
+        # 3. Downloads por protocolo (SDK vs ISAPI)
+        sdk_count = banco.execute(
+            "SELECT COUNT(*) FROM gravacoes g JOIN jobs j ON g.job_id = j.id "
+            "WHERE g.status='concluido' AND (j.protocolo_ativo = 'SDK' OR (j.protocolo_ativo IS NULL AND j.modo_download = 'sdk'))"
+        ).fetchone()[0] or 0
+        isapi_count = banco.execute(
+            "SELECT COUNT(*) FROM gravacoes g JOIN jobs j ON g.job_id = j.id "
+            "WHERE g.status='concluido' AND (j.protocolo_ativo = 'ISAPI' OR (j.protocolo_ativo IS NULL AND j.modo_download = 'isapi'))"
+        ).fetchone()[0] or 0
+        total_concluidas = banco.execute("SELECT COUNT(*) FROM gravacoes WHERE status='concluido'").fetchone()[0] or 0
+        outros = max(0, total_concluidas - (sdk_count + isapi_count))
+        if outros > 0:
+            sdk_count += outros
+
+        total_bytes = banco.execute("SELECT SUM(bytes_baixados) FROM gravacoes WHERE status='concluido'").fetchone()[0] or 0
+
+        # 4. Estatísticas do Telegram
+        total_telegram = banco.execute("SELECT COUNT(*) FROM solicitacoes_telegram").fetchone()[0] or 0
+        tg_automaticos = banco.execute("SELECT COUNT(*) FROM solicitacoes_telegram WHERE job_id IS NOT NULL").fetchone()[0] or 0
+        tg_aguardando_ip = banco.execute("SELECT COUNT(*) FROM solicitacoes_telegram WHERE status='aguardando_ip'").fetchone()[0] or 0
+        tg_descartados = banco.execute("SELECT COUNT(*) FROM solicitacoes_telegram WHERE status='descartado'").fetchone()[0] or 0
+
+        # Jobs status geral
+        jobs_total = banco.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] or 0
+        jobs_concluidos = banco.execute("SELECT COUNT(*) FROM jobs WHERE status='concluido'").fetchone()[0] or 0
+
+    return jsonify({
+        "unidades": {
+            "total": total_escolas,
+            "com_ip": escolas_com_ip,
+            "sem_ip": escolas_sem_ip,
+            "percentual_com_ip": round((escolas_com_ip / total_escolas * 100), 1) if total_escolas else 0,
+            "lista": lista_escolas
+        },
+        "top5_unidades": top5,
+        "protocolos": {
+            "sdk": sdk_count,
+            "isapi": isapi_count,
+            "total": total_concluidas
+        },
+        "gravacoes": {
+            "total_concluidas": total_concluidas,
+            "total_bytes": total_bytes or 0
+        },
+        "telegram": {
+            "total": total_telegram,
+            "automaticos": tg_automaticos,
+            "aguardando_ip": tg_aguardando_ip,
+            "descartados": tg_descartados
+        },
+        "jobs": {
+            "total": jobs_total,
+            "concluidos": jobs_concluidos
+        }
+    })
 
 
 # ---------------------------------------------------------------------------

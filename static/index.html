@@ -97,7 +97,30 @@
     .card-contador-icon { font-size:1.6rem; line-height:1; }
     .card-contador-info { display:flex; flex-direction:column; }
     .card-contador-label { font:700 .72rem/1.2 system-ui,sans-serif; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
-    .card-contador-numero { font:800 1.55rem/1.1 system-ui,sans-serif; color:var(--accent-dark); }
+    /* Painel de Estatísticas */
+    .grid-stats-kpi { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-bottom:20px; }
+    .card-kpi { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:0 3px 10px rgba(0,0,0,0.02); display:flex; gap:12px; align-items:center; }
+    .kpi-icon { font-size:2rem; line-height:1; }
+    .kpi-corpo { display:flex; flex-direction:column; min-width:0; }
+    .kpi-label { font:700 .72rem system-ui,sans-serif; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+    .kpi-valor { font:800 1.55rem/1.1 system-ui,sans-serif; color:var(--ink); margin:3px 0 2px; }
+    .kpi-sub { font:600 .76rem system-ui,sans-serif; color:var(--muted); }
+    .kpi-protocolos { display:flex; gap:8px; font:700 .82rem system-ui,sans-serif; margin:3px 0 2px; }
+    
+    .lista-top5 { display:grid; gap:10px; font-family:system-ui,sans-serif; }
+    .item-top5 { background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .item-top5-pos { font-size:1.3rem; font-weight:800; min-width:32px; text-align:center; }
+    .item-top5-info { flex:1; min-width:0; }
+    .item-top5-escola { font-weight:700; font-size:.92rem; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .item-top5-sub { font-size:.78rem; color:var(--muted); }
+    .item-top5-badge { font-weight:800; font-size:.9rem; color:var(--accent-dark); background:#e6f4ea; padding:4px 10px; border-radius:12px; white-space:nowrap; }
+
+    .tabela-unidades { width:100%; border-collapse:collapse; font-family:system-ui,sans-serif; font-size:.86rem; }
+    .tabela-unidades th { background:#f9fafb; text-align:left; padding:10px 12px; font-size:.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); border-bottom:1px solid var(--line); }
+    .tabela-unidades td { padding:10px 12px; border-bottom:1px solid #f0f3ee; vertical-align:middle; }
+    .tabela-unidades tr:hover td { background:#fafbf9; }
+    .badge-ip-ok { background:#dcfce7; color:#166534; font-weight:700; font-size:.74rem; padding:2px 8px; border-radius:10px; display:inline-block; }
+    .badge-ip-sem { background:#fef3c7; color:#92400e; font-weight:700; font-size:.74rem; padding:2px 8px; border-radius:10px; display:inline-block; }
 
     @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } .card-contador { margin-top:14px; justify-content:center; } }
   </style>
@@ -124,6 +147,7 @@
       Solicitações
       <span id="badge-telegram" class="badge-pendente" style="display:none;">0</span>
     </button>
+    <button type="button" class="btn-aba" data-alvo="painel-estatisticas">📊 Estatísticas</button>
   </nav>
 
   <div id="painel-downloads">
@@ -205,6 +229,119 @@
     </div>
   </section>
 
+  <!-- Painel de Estatísticas -->
+  <section id="painel-estatisticas" style="display:none; background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin:0 0 2px;">Estatísticas do Sistema</h2>
+        <p style="margin:0; font-size:.88rem; color:var(--muted);">Métricas operacionais, unidades monitoradas e histórico consolidado.</p>
+      </div>
+      <div>
+        <button type="button" id="btn-recarregar-stats" style="width:auto; min-height:36px; padding:6px 14px; margin-top:0; background:#fff; color:var(--ink); border:1px solid #bec9bf; font-size:.85rem; cursor:pointer;">🔄 Atualizar estatísticas</button>
+      </div>
+    </div>
+
+    <!-- Cards KPIs Principais -->
+    <div class="grid-stats-kpi">
+      <div class="card-kpi">
+        <div class="kpi-icon">🏫</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Total de Unidades</span>
+          <strong id="stat-total-unidades" class="kpi-valor">0</strong>
+          <small id="stat-sub-unidades" class="kpi-sub">Carregando...</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">🌐</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Unidades com IP</span>
+          <strong id="stat-com-ip" class="kpi-valor" style="color:var(--accent-dark);">0</strong>
+          <small id="stat-sem-ip" class="kpi-sub" style="color:var(--warn);">-- sem IP</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">⚡</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Protocolos de Download</span>
+          <div class="kpi-protocolos">
+            <span style="color:var(--accent-dark);">SDK: <strong id="stat-sdk-count">0</strong></span>
+            <span style="color:var(--muted);">ISAPI: <strong id="stat-isapi-count">0</strong></span>
+          </div>
+          <small id="stat-proto-sub" class="kpi-sub">Total: -- gravações</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">💬</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Pedidos Telegram</span>
+          <strong id="stat-telegram-total" class="kpi-valor">0</strong>
+          <small id="stat-telegram-sub" class="kpi-sub">-- automáticos</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">💾</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Volume Total Baixado</span>
+          <strong id="stat-total-volume" class="kpi-valor">0 MB</strong>
+          <small id="stat-total-concluidas" class="kpi-sub">-- gravações concluídas</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top 5 Unidades -->
+    <div style="background:#fff; border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin-bottom:20px; box-shadow:0 2px 6px rgba(0,0,0,0.02);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="margin:0; font-size:1.05rem; color:var(--ink);">🏆 Top 5 Unidades com Mais Gravações Concluídas</h3>
+        <span style="font-size:.78rem; color:var(--muted);">Ranking consolidado</span>
+      </div>
+      <div id="lista-top5-unidades" class="lista-top5">
+        <p class="empty">Carregando ranking...</p>
+      </div>
+    </div>
+
+    <!-- Tabela Retrátil Completa de Unidades -->
+    <details class="card-tg" style="margin-bottom:0;" open>
+      <summary class="card-tg-summary" style="padding:16px 20px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="seta-tg">▶</span>
+          <strong style="font-size:1.05rem;">🏫 Unidades Cadastradas</strong>
+          <span id="badge-total-escolas" style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:12px; font-size:.8rem; font-weight:700;">0</span>
+        </div>
+        <span style="font-size:.82rem; color:var(--muted);">Clique para expandir/recolher a lista completa</span>
+      </summary>
+      <div class="card-tg-body" style="padding:20px;">
+        <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="filtro-tabela-unidades" placeholder="🔍 Buscar por código, escola ou cidade..." style="max-width:360px; min-height:38px; padding:6px 12px; font-size:.88rem; border-radius:4px; margin:0;">
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="btn-filtro ativo btn-filtro-unidade" data-tipo="todas" style="margin:0;">Todas</button>
+            <button type="button" class="btn-filtro btn-filtro-unidade" data-tipo="com_ip" style="margin:0;">Com IP</button>
+            <button type="button" class="btn-filtro btn-filtro-unidade" data-tipo="sem_ip" style="margin:0;">Sem IP</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto; max-height:460px; border:1px solid var(--line); border-radius:4px;">
+          <table class="tabela-unidades">
+            <thead style="position:sticky; top:0; z-index:2;">
+              <tr>
+                <th style="width:75px;">Código</th>
+                <th>Nome da Escola</th>
+                <th>Cidade</th>
+                <th style="width:140px;">IP da DVR</th>
+                <th style="width:100px; text-align:center;">Gravações</th>
+              </tr>
+            </thead>
+            <tbody id="corpo-tabela-unidades">
+              <tr><td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">Carregando unidades...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </section>
+
   <footer style="margin-top:40px; text-align:center; padding:22px 0; border-top:1px solid var(--line); color:var(--muted); font-family:system-ui,sans-serif; font-size:.95rem;">
     <strong style="color:var(--ink);">Sempre confira os dados no ROCKET 🚀</strong>
   </footer>
@@ -227,7 +364,12 @@
   };
   const formatBytes = valor => {
     if (valor === undefined || valor === null) return '0 KB';
-    if (valor >= 1024 * 1024) return `${(valor / 1024 / 1024).toFixed(1)} MB`;
+    const mb = valor / (1024 * 1024);
+    if (mb >= 999.5) {
+      const gb = mb / 1024;
+      return `${gb >= 1 ? gb.toFixed(2) : '1.00'} GB`;
+    }
+    if (mb >= 1) return `${mb.toFixed(1)} MB`;
     return `${(valor / 1024).toFixed(0)} KB`;
   };
   const formatDuration = segundos => {
@@ -262,21 +404,58 @@
       return;
     }
 
-    // Guarda elementos de video existentes na pagina para NUNCA destrui-los durante a reproducao
-    const containersVideos = new Map();
-    jobs.querySelectorAll('details.videos[data-job-id]').forEach(det => {
-      containersVideos.set(String(det.dataset.jobId), det);
+    const emptyP = jobs.querySelector('p.empty');
+    if (emptyP) emptyP.remove();
+
+    // Mapeia artigos existentes por jobId para atualizar in-place sem reiniciar o player de vídeo
+    const artigosExistentes = new Map();
+    jobs.querySelectorAll('article.job[data-job-id]').forEach(art => {
+      artigosExistentes.set(String(art.dataset.jobId), art);
     });
 
-    const fragment = document.createDocumentFragment();
+    const idsAtuais = new Set(lista.map(j => String(j.id)));
+    artigosExistentes.forEach((art, idStr) => {
+      if (!idsAtuais.has(idStr)) {
+        art.remove();
+      }
+    });
 
-    lista.forEach(job => {
-      const article = document.createElement('article');
-      article.className = 'job';
-      article.dataset.jobId = String(job.id);
+    lista.forEach((job, idx) => {
+      const jobIdStr = String(job.id);
+      let article = artigosExistentes.get(jobIdStr);
 
-      const divConteudo = document.createElement('div');
-      divConteudo.innerHTML = `
+      if (!article) {
+        article = document.createElement('article');
+        article.className = 'job';
+        article.dataset.jobId = jobIdStr;
+
+        const divConteudo = document.createElement('div');
+        divConteudo.className = 'job-conteudo';
+
+        const spanStatus = document.createElement('span');
+        spanStatus.className = 'status';
+        spanStatus.dataset.status = job.status;
+        spanStatus.textContent = job.status;
+
+        article.appendChild(divConteudo);
+        article.appendChild(spanStatus);
+      }
+
+      // Garante que o artigo esteja na posição ordenada correta sem desconectar elementos do DOM
+      const filhoAtual = jobs.children[idx];
+      if (filhoAtual !== article) {
+        jobs.insertBefore(article, filhoAtual || null);
+      }
+
+      const spanStatus = article.querySelector('.status');
+      if (spanStatus) {
+        spanStatus.dataset.status = job.status;
+        spanStatus.textContent = job.status;
+      }
+
+      const divConteudo = article.querySelector('.job-conteudo') || article.firstElementChild;
+
+      const htmlInfo = `
         <strong>${job.escola || job.dvr_ip}</strong>
         <small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong>
         <span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>
@@ -293,19 +472,38 @@
         ${job.status === 'sem_gravacoes' ? '<p class="job-error" style="color:#6b5a26">Nenhuma gravacao encontrada. Confira IP, camera, data e fuso horario da DVR.</p>' : ''}
       `;
 
-      // Se houver arquivos concluidos, preserva o video atual tocando sem reiniciar
+      let elInfo = divConteudo.querySelector('.job-info-bloco');
+      if (!elInfo) {
+        elInfo = document.createElement('div');
+        elInfo.className = 'job-info-bloco';
+        divConteudo.insertBefore(elInfo, divConteudo.firstChild);
+      }
+      elInfo.innerHTML = htmlInfo;
+
+      // Atualiza botões de ação
+      let divAcoes = divConteudo.querySelector('.job-acoes');
+      if (!divAcoes) {
+        divAcoes = document.createElement('div');
+        divAcoes.className = 'job-acoes';
+        divAcoes.style = 'display:flex; gap:8px; align-items:center; margin-top:8px;';
+        divConteudo.appendChild(divAcoes);
+      }
+      const acoesHtml = `
+        ${!['concluido', 'cancelado', 'sem_gravacoes'].includes(job.status) ? `<button class="cancelar" type="button" data-job-id="${job.id}">Cancelar download</button>` : ''}
+        ${['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(job.status) ? `<button class="excluir" type="button" data-job-id="${job.id}">Remover da lista</button>` : ''}
+      `;
+      if (divAcoes.innerHTML.trim() !== acoesHtml.trim()) {
+        divAcoes.innerHTML = acoesHtml;
+      }
+
+      // Gerencia vídeos: NUNCA recria os players de vídeo se a contagem for idêntica, preservando reprodução sem travar
       if (job.arquivos && job.arquivos.length) {
-        const jobIdStr = String(job.id);
-        const detExistente = containersVideos.get(jobIdStr);
-        if (detExistente && detExistente.querySelectorAll('video').length === job.arquivos.length) {
-          divConteudo.appendChild(detExistente);
-        } else {
-          const isOpen = detExistente ? detExistente.open : false;
-          const novoDet = document.createElement('details');
-          novoDet.className = 'videos';
-          novoDet.dataset.jobId = jobIdStr;
-          novoDet.open = isOpen;
-          novoDet.innerHTML = `
+        let detVideos = divConteudo.querySelector('details.videos');
+        if (!detVideos) {
+          detVideos = document.createElement('details');
+          detVideos.className = 'videos';
+          detVideos.dataset.jobId = jobIdStr;
+          detVideos.innerHTML = `
             <summary>Ver gravacoes (${job.arquivos.length})</summary>
             ${job.arquivos.map(arquivo => `
               <div class="video-item">
@@ -317,30 +515,33 @@
               </div>
             `).join('')}
           `;
-          divConteudo.appendChild(novoDet);
+          divConteudo.insertBefore(detVideos, divAcoes);
+        } else {
+          const sum = detVideos.querySelector('summary');
+          if (sum) sum.textContent = `Ver gravacoes (${job.arquivos.length})`;
+          const qtdAtual = detVideos.querySelectorAll('video').length;
+          if (qtdAtual !== job.arquivos.length) {
+            const isOpen = detVideos.open;
+            detVideos.innerHTML = `
+              <summary>Ver gravacoes (${job.arquivos.length})</summary>
+              ${job.arquivos.map(arquivo => `
+                <div class="video-item">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <small style="margin:0;">Camera ${arquivo.camera} - ${arquivo.nome}</small>
+                    <a href="${arquivo.url}" download="${arquivo.nome}.mp4" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:700;">⬇ Baixar video</a>
+                  </div>
+                  <video controls preload="metadata" playsinline src="${arquivo.url}"></video>
+                </div>
+              `).join('')}
+            `;
+            detVideos.open = isOpen;
+          }
         }
+      } else {
+        const detExistente = divConteudo.querySelector('details.videos');
+        if (detExistente) detExistente.remove();
       }
-
-      const divAcoes = document.createElement('div');
-      divAcoes.style = 'display:flex; gap:8px; align-items:center; margin-top:8px;';
-      divAcoes.innerHTML = `
-        ${!['concluido', 'cancelado', 'sem_gravacoes'].includes(job.status) ? `<button class="cancelar" type="button" data-job-id="${job.id}">Cancelar download</button>` : ''}
-        ${['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(job.status) ? `<button class="excluir" type="button" data-job-id="${job.id}">Remover da lista</button>` : ''}
-      `;
-      divConteudo.appendChild(divAcoes);
-
-      const spanStatus = document.createElement('span');
-      spanStatus.className = 'status';
-      spanStatus.dataset.status = job.status;
-      spanStatus.textContent = job.status;
-
-      article.appendChild(divConteudo);
-      article.appendChild(spanStatus);
-      fragment.appendChild(article);
     });
-
-    jobs.innerHTML = '';
-    jobs.appendChild(fragment);
   }
 
   async function atualizarJobs() {
@@ -530,6 +731,7 @@
   const btnsAbas = document.querySelectorAll('.btn-aba');
   const painelDownloads = document.querySelector('#painel-downloads');
   const painelTelegram = document.querySelector('#painel-telegram');
+  const painelEstatisticas = document.querySelector('#painel-estatisticas');
   const badgeTelegram = document.querySelector('#badge-telegram');
   const statusTelegramEl = document.querySelector('#telegram-status');
   const listaTelegramEl = document.querySelector('#lista-telegram');
@@ -541,13 +743,14 @@
       btnsAbas.forEach(b => b.classList.remove('ativa'));
       btn.classList.add('ativa');
       const alvo = btn.dataset.alvo;
-      if (alvo === 'painel-downloads') {
-        painelDownloads.style.display = 'block';
-        painelTelegram.style.display = 'none';
-      } else {
-        painelDownloads.style.display = 'none';
-        painelTelegram.style.display = 'block';
+      painelDownloads.style.display = alvo === 'painel-downloads' ? 'block' : 'none';
+      painelTelegram.style.display = alvo === 'painel-telegram' ? 'block' : 'none';
+      if (painelEstatisticas) painelEstatisticas.style.display = alvo === 'painel-estatisticas' ? 'block' : 'none';
+
+      if (alvo === 'painel-telegram') {
         atualizarTelegram();
+      } else if (alvo === 'painel-estatisticas') {
+        atualizarEstatisticas();
       }
     });
   });
@@ -880,9 +1083,169 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // ==========================================
+  // Controle da Aba de Estatísticas
+  // ==========================================
+  let dadosEstatisticas = null;
+  let filtroUnidadesAtual = 'todas';
+  let termoBuscaUnidades = '';
+
+  async function atualizarEstatisticas() {
+    try {
+      const res = await fetch('/api/estatisticas');
+      if (!res.ok) throw new Error('Falha ao carregar estatísticas');
+      dadosEstatisticas = await res.json();
+      renderizarEstatisticas();
+    } catch (e) {
+      console.warn('Erro ao atualizar estatísticas:', e);
+    }
+  }
+
+  function renderizarEstatisticas() {
+    if (!dadosEstatisticas) return;
+    const { unidades, top5_unidades, protocolos, gravacoes, telegram } = dadosEstatisticas;
+
+    // 1. KPIs
+    const elTotalUnidades = document.querySelector('#stat-total-unidades');
+    const elSubUnidades = document.querySelector('#stat-sub-unidades');
+    const elComIp = document.querySelector('#stat-com-ip');
+    const elSemIp = document.querySelector('#stat-sem-ip');
+    const elSdkCount = document.querySelector('#stat-sdk-count');
+    const elIsapiCount = document.querySelector('#stat-isapi-count');
+    const elProtoSub = document.querySelector('#stat-proto-sub');
+    const elTgTotal = document.querySelector('#stat-telegram-total');
+    const elTgSub = document.querySelector('#stat-telegram-sub');
+    const elVolTotal = document.querySelector('#stat-total-volume');
+    const elConcluidas = document.querySelector('#stat-total-concluidas');
+
+    if (elTotalUnidades) elTotalUnidades.textContent = unidades.total.toLocaleString('pt-BR');
+    if (elSubUnidades) elSubUnidades.textContent = `${unidades.percentual_com_ip}% com IP cadastrado`;
+    if (elComIp) elComIp.textContent = unidades.com_ip.toLocaleString('pt-BR');
+    if (elSemIp) elSemIp.textContent = `${unidades.sem_ip.toLocaleString('pt-BR')} sem IP cadastrado`;
+
+    if (elSdkCount) elSdkCount.textContent = protocolos.sdk.toLocaleString('pt-BR');
+    if (elIsapiCount) elIsapiCount.textContent = protocolos.isapi.toLocaleString('pt-BR');
+    if (elProtoSub) elProtoSub.textContent = `Total: ${protocolos.total.toLocaleString('pt-BR')} gravações`;
+
+    if (elTgTotal) elTgTotal.textContent = telegram.total.toLocaleString('pt-BR');
+    if (elTgSub) elTgSub.textContent = `${telegram.automaticos} automáticas | ${telegram.aguardando_ip} pendentes`;
+
+    if (elVolTotal) elVolTotal.textContent = formatBytes(gravacoes.total_bytes);
+    if (elConcluidas) elConcluidas.textContent = `${gravacoes.total_concluidas.toLocaleString('pt-BR')} gravações concluídas`;
+
+    // Atualiza também o contador do cabeçalho
+    const elContadorGeral = document.querySelector('#contador-concluidas');
+    if (elContadorGeral && gravacoes.total_concluidas > 0) {
+      elContadorGeral.textContent = gravacoes.total_concluidas;
+    }
+
+    // 2. Top 5 Unidades
+    const listaTop5El = document.querySelector('#lista-top5-unidades');
+    if (listaTop5El) {
+      if (!top5_unidades || !top5_unidades.length) {
+        listaTop5El.innerHTML = '<p class="empty">Nenhuma gravação concluída ainda para gerar o ranking.</p>';
+      } else {
+        const medalhas = ['🥇', '🥈', '🥉', '4º', '5º'];
+        listaTop5El.innerHTML = top5_unidades.map((item, idx) => `
+          <div class="item-top5">
+            <div class="item-top5-pos">${medalhas[idx] || (idx + 1) + 'º'}</div>
+            <div class="item-top5-info">
+              <strong>${item.nome}</strong>
+              <small>Código: <b>${item.codigo}</b>${item.cidade ? ' • ' + item.cidade : ''}${item.dvr_ip ? ' • IP: ' + item.dvr_ip : ' • <span style="color:var(--warn)">Sem IP</span>'}</small>
+            </div>
+            <span class="item-top5-badge">${item.gravacoes} ${item.gravacoes === 1 ? 'gravação' : 'gravações'}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 3. Tabela Retrátil de Unidades
+    const badgeEscolas = document.querySelector('#badge-total-escolas');
+    if (badgeEscolas) badgeEscolas.textContent = unidades.total;
+
+    filtrarERenderizarTabelaUnidades();
+  }
+
+  function filtrarERenderizarTabelaUnidades() {
+    if (!dadosEstatisticas || !dadosEstatisticas.unidades || !dadosEstatisticas.unidades.lista) return;
+    const tbody = document.querySelector('#corpo-tabela-unidades');
+    if (!tbody) return;
+
+    let lista = dadosEstatisticas.unidades.lista;
+
+    // Filtro por status do IP
+    if (filtroUnidadesAtual === 'com_ip') {
+      lista = lista.filter(u => u.dvr_ip && u.dvr_ip.trim() !== '');
+    } else if (filtroUnidadesAtual === 'sem_ip') {
+      lista = lista.filter(u => !u.dvr_ip || u.dvr_ip.trim() === '');
+    }
+
+    // Busca textual
+    if (termoBuscaUnidades) {
+      lista = lista.filter(u => {
+        const cod = String(u.codigo || '').toLowerCase();
+        const nome = String(u.nome || '').toLowerCase();
+        const cid = String(u.cidade || '').toLowerCase();
+        const ip = String(u.dvr_ip || '').toLowerCase();
+        return cod.includes(termoBuscaUnidades) ||
+               nome.includes(termoBuscaUnidades) ||
+               cid.includes(termoBuscaUnidades) ||
+               ip.includes(termoBuscaUnidades);
+      });
+    }
+
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">Nenhuma unidade encontrada para os filtros aplicados.</td></tr>';
+      return;
+    }
+
+    const maxRender = 300;
+    const itensRender = lista.slice(0, maxRender);
+
+    let html = itensRender.map(item => `
+      <tr>
+        <td><strong>${item.codigo}</strong></td>
+        <td>${item.nome}</td>
+        <td><small style="color:var(--muted);">${item.cidade || '-'}</small></td>
+        <td>
+          ${item.dvr_ip ? `<span class="badge-ip-ok">${item.dvr_ip}</span>` : `<span class="badge-ip-sem">Sem IP</span>`}
+        </td>
+        <td style="text-align:center;">
+          <strong style="${item.gravacoes > 0 ? 'color:var(--accent-dark);' : 'color:var(--muted);'}">${item.gravacoes}</strong>
+        </td>
+      </tr>
+    `).join('');
+
+    if (lista.length > maxRender) {
+      html += `<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:10px; font-size:.82rem;">Mostrando ${maxRender} de ${lista.length} unidades. Use a busca acima para refinar.</td></tr>`;
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  document.querySelector('#btn-recarregar-stats')?.addEventListener('click', atualizarEstatisticas);
+
+  document.querySelectorAll('.btn-filtro-unidade').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-filtro-unidade').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      filtroUnidadesAtual = btn.dataset.tipo;
+      filtrarERenderizarTabelaUnidades();
+    });
+  });
+
+  const inputFiltroUnidades = document.querySelector('#filtro-tabela-unidades');
+  if (inputFiltroUnidades) {
+    inputFiltroUnidades.addEventListener('input', e => {
+      termoBuscaUnidades = e.target.value.trim().toLowerCase();
+      filtrarERenderizarTabelaUnidades();
+    });
+  }
+
   carregarCatalogoEscolas();
   atualizarJobs(); setInterval(atualizarJobs, 5000);
   atualizarTelegram(); setInterval(atualizarTelegram, 5000);
+  atualizarEstatisticas(); setInterval(atualizarEstatisticas, 15000);
 
 </script>
 </body>
