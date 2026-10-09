@@ -38,6 +38,7 @@ from zoneinfo import ZoneInfo
 from urllib.parse import urlparse, parse_qs
 from xml.sax.saxutils import escape
 import json
+import re
 import xml.etree.ElementTree as ET
 
 # Garante que gi/GStreamer possam ser importados pelo ambiente virtual (.venv)
@@ -1207,6 +1208,35 @@ def obter_escola(codigo):
         "nome": linha[1],
         "dvr_ip": linha[2] or "",
         "cidade": linha[3] or ""
+    })
+
+
+@app.route("/api/escolas/<codigo>/salvar-ip", methods=["POST"])
+def salvar_ip_escola(codigo):
+    dados = request.get_json(silent=True) or {}
+    novo_ip = str(dados.get("dvr_ip", "")).strip()
+    codigo = str(codigo).strip()
+
+    if novo_ip:
+        if not re.match(r"^(\d{1,3}\.){3}\d{1,3}$", novo_ip):
+            return jsonify({"erro": "Endereço IP inválido (exemplo: 192.168.1.10)."}), 400
+
+    with banco_lock:
+        escola = banco.execute("SELECT codigo, nome FROM escolas WHERE codigo=?", (codigo,)).fetchone()
+        if not escola:
+            return jsonify({"erro": f"Unidade com código {codigo} não encontrada."}), 404
+
+        banco.execute(
+            "UPDATE escolas SET dvr_ip=?, atualizado_em=CURRENT_TIMESTAMP WHERE codigo=?",
+            (novo_ip if novo_ip else None, codigo)
+        )
+        banco.commit()
+
+    return jsonify({
+        "sucesso": True,
+        "codigo": codigo,
+        "nome": escola[1],
+        "dvr_ip": novo_ip
     })
 
 
