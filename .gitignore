@@ -45,11 +45,14 @@ build/
 dist/
 *.egg-info/
 
-# Credenciais
+# Credenciais e configuracoes de ambiente
 *.pem
 *.key
-
-
+.env
+.env.*
+*.env
+*.session
+*.session-journal
 
 # FFmpeg (baixado automaticamente pelo setup_and_run.ps1)
 ffmpeg.exe
@@ -58,8 +61,10 @@ ffplay.exe
 ffmpeg-release-essentials.zip
 _ffmpeg_tmp/
 
-#dados locais
+# Documentacao interna e explicativa
+EXPLICACAO_ATUALIZACAO_TELEGRAM.txt
 
+#dados locais
 data_all_sheets.json
 escolas.json
 

@@ -50,6 +50,7 @@ from requests.auth import HTTPDigestAuth
 from flask import Flask, jsonify, request, send_file, send_from_directory, url_for
 
 import hikvision_sdk
+import telegram_bot
 
 # ---------------------------------------------------------------------------
 # Configuração
@@ -153,6 +154,25 @@ def preparar_banco():
                 PRIMARY KEY (job_id, dvr_ip, camera, nome_trecho)
             )
         """)
+        banco.execute("""
+            CREATE TABLE IF NOT EXISTS solicitacoes_telegram (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_message_id INTEGER,
+                solicitante TEXT,
+                mensagem_original TEXT,
+                codigo_escola TEXT,
+                nome_escola TEXT,
+                cameras TEXT,
+                data_inicio TEXT,
+                data_fim TEXT,
+                dvr_ip TEXT DEFAULT '',
+                status TEXT DEFAULT 'aguardando_ip', -- aguardando_ip / baixando / concluido / descartado / erro_leitura
+                job_id INTEGER,
+                erro_motivo TEXT,
+                recebido_em TEXT DEFAULT CURRENT_TIMESTAMP,
+                processado_em TEXT
+            )
+        """)
         chave_gravacoes = [
             linha[1] for linha in banco.execute("PRAGMA table_info(gravacoes)")
             if linha[5]
@@ -198,6 +218,8 @@ def preparar_banco():
             ("gravacoes", "bytes_baixados", "INTEGER DEFAULT 0"),
             ("gravacoes", "ultimo_erro", "TEXT"),
             ("gravacoes", "atualizado_em", "TEXT"),
+            ("escolas", "dvr_usuario", "TEXT DEFAULT 'admin'"),
+            ("escolas", "dvr_senha", "TEXT DEFAULT ''"),
         ):
             try:
                 banco.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
@@ -1288,9 +1310,164 @@ def servir_gravacao(job_id, camera, nome_trecho):
     return send_file(resultado[0], mimetype="video/mp4", conditional=True)
 
 
+# ---------------------------------------------------------------------------
+# Rotas de Integracao com o Telegram
+# ---------------------------------------------------------------------------
+
+@app.route("/api/telegram/status", methods=["GET"])
+def status_telegram():
+    status = telegram_bot.obter_status()
+    with banco_lock:
+        total_pendentes = banco.execute(
+            "SELECT COUNT(*) FROM solicitacoes_telegram WHERE status='aguardando_ip'"
+        ).fetchone()[0]
+        total_hoje = banco.execute(
+            "SELECT COUNT(*) FROM solicitacoes_telegram WHERE date(recebido_em) = date('now')"
+        ).fetchone()[0]
+    status["pendentes_ip"] = total_pendentes
+    status["total_hoje"] = total_hoje
+    return jsonify(status)
+
+
+@app.route("/api/telegram/solicitacoes", methods=["GET"])
+def listar_solicitacoes_telegram():
+    status_filtro = request.args.get("status", "").strip()
+    with banco_lock:
+        query = """
+            SELECT s.id, s.telegram_message_id, s.solicitante, s.mensagem_original,
+                   s.codigo_escola, s.nome_escola, s.cameras, s.data_inicio, s.data_fim,
+                   s.dvr_ip, s.status, s.job_id, s.erro_motivo, s.recebido_em, s.processado_em,
+                   j.status as job_status, e.dvr_ip as escola_ip_cadastrado
+            FROM solicitacoes_telegram s
+            LEFT JOIN jobs j ON s.job_id = j.id
+            LEFT JOIN escolas e ON s.codigo_escola = e.codigo
+        """
+        params = []
+        if status_filtro:
+            query += " WHERE s.status = ?"
+            params.append(status_filtro)
+        query += " ORDER BY s.id DESC LIMIT 100"
+
+        linhas = banco.execute(query, params).fetchall()
+
+    resultado = []
+    for l in linhas:
+        resultado.append({
+            "id": l[0],
+            "telegram_message_id": l[1],
+            "solicitante": l[2] or "",
+            "mensagem_original": l[3] or "",
+            "codigo_escola": l[4] or "",
+            "nome_escola": l[5] or "",
+            "cameras": l[6] or "1",
+            "data_inicio": l[7] or "",
+            "data_fim": l[8] or "",
+            "dvr_ip": l[9] or l[16] or "",
+            "status": l[10],
+            "job_id": l[11],
+            "erro_motivo": l[12] or "",
+            "recebido_em": l[13] or "",
+            "processado_em": l[14] or "",
+            "job_status": l[15] or "",
+            "tem_ip_cadastrado": bool(l[16])
+        })
+    return jsonify(resultado)
+
+
+@app.route("/api/telegram/solicitacoes/<int:solic_id>/iniciar", methods=["POST"])
+def iniciar_solicitacao_telegram(solic_id):
+    dados = request.get_json() or {}
+    dvr_ip_req = str(dados.get("dvr_ip", "")).strip()
+    senha_req = str(dados.get("senha", "")).strip()
+    usuario_req = str(dados.get("usuario", "")).strip() or "admin"
+    cameras_req = str(dados.get("cameras", "")).strip()
+
+    with banco_lock:
+        solic = banco.execute("SELECT * FROM solicitacoes_telegram WHERE id=?", (solic_id,)).fetchone()
+        if not solic:
+            return jsonify({"erro": "Solicitacao nao encontrada."}), 404
+
+        colunas = [c[1] for c in banco.execute("PRAGMA table_info(solicitacoes_telegram)").fetchall()]
+        dados_solic = dict(zip(colunas, solic))
+
+        cod_escola = str(dados_solic.get("codigo_escola") or "").strip()
+        nome_escola = str(dados_solic.get("nome_escola") or "").strip()
+
+        linha_escola = None
+        if cod_escola:
+            linha_escola = banco.execute(
+                "SELECT dvr_ip, dvr_usuario, dvr_senha FROM escolas WHERE codigo=?", (cod_escola,)
+            ).fetchone()
+
+        ip_cadastrado = linha_escola[0] if linha_escola and linha_escola[0] else ""
+        senha_cadastrada = linha_escola[2] if linha_escola and linha_escola[2] else ""
+        usuario_cadastrado = linha_escola[1] if linha_escola and linha_escola[1] else "admin"
+
+        ip_final = dvr_ip_req or ip_cadastrado or str(dados_solic.get("dvr_ip") or "").strip()
+        if not ip_final:
+            return jsonify({"erro": "Informe o endereco IP da DVR."}), 400
+
+        senha_final = senha_req or senha_cadastrada or os.environ.get("DVR_SENHA_PADRAO", "")
+        usuario_final = usuario_req or usuario_cadastrado or "admin"
+        cams_final = cameras_req or str(dados_solic.get("cameras") or "1").strip()
+        data_ini = dados_solic.get("data_inicio")
+        data_fim = dados_solic.get("data_fim")
+
+        if cod_escola:
+            banco.execute("""
+                INSERT INTO escolas (codigo, nome, dvr_ip, dvr_usuario, dvr_senha, atualizado_em)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(codigo) DO UPDATE SET
+                    dvr_ip=?,
+                    dvr_usuario=CASE WHEN ? != '' THEN ? ELSE dvr_usuario END,
+                    dvr_senha=CASE WHEN ? != '' THEN ? ELSE dvr_senha END,
+                    atualizado_em=CURRENT_TIMESTAMP
+            """, (cod_escola, nome_escola or cod_escola, ip_final, usuario_final, senha_final,
+                  ip_final, usuario_final, usuario_final, senha_final, senha_final))
+
+        cursor = banco.execute("""
+            INSERT INTO jobs (dvr_ip, usuario, senha, cameras, data_inicio, data_fim, escola, codigo_escola, modo_download, porta_sdk, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto', 8000, 'novo')
+        """, (ip_final, usuario_final, senha_final, cams_final, data_ini, data_fim, nome_escola, cod_escola))
+        novo_job_id = cursor.lastrowid
+
+        banco.execute("""
+            UPDATE solicitacoes_telegram
+            SET dvr_ip=?, status='baixando', job_id=?, processado_em=CURRENT_TIMESTAMP
+            WHERE id=?
+        """, (ip_final, novo_job_id, solic_id))
+        banco.commit()
+
+    if telegram_bot.TELEGRAM_GROUP_ID:
+        telegram_bot.enviar_mensagem_telegram(
+            telegram_bot.TELEGRAM_GROUP_ID,
+            f"🚀 <b>Download Iniciado pelo Operador!</b>\n"
+            f"🏫 <b>Escola:</b> {nome_escola or 'Local'} (Cód: {cod_escola or '-'})\n"
+            f"🌐 <b>IP Definido:</b> {ip_final}\n"
+            f"📹 <b>Câmeras:</b> {cams_final}\n"
+            f"📥 <i>Job #{novo_job_id} na fila de download do servidor.</i>",
+            reply_to_message_id=dados_solic.get("telegram_message_id")
+        )
+
+    return jsonify({"sucesso": True, "job_id": novo_job_id, "status": "baixando"})
+
+
+@app.route("/api/telegram/solicitacoes/<int:solic_id>/descartar", methods=["POST"])
+def descartar_solicitacao_telegram(solic_id):
+    with banco_lock:
+        banco.execute(
+            "UPDATE solicitacoes_telegram SET status='descartado', processado_em=CURRENT_TIMESTAMP WHERE id=?",
+            (solic_id,)
+        )
+        banco.commit()
+    return jsonify({"sucesso": True, "id": solic_id, "status": "descartado"})
+
+
 if __name__ == "__main__":
+    preparar_banco()
     # Sobe o trabalhador numa thread separada, em segundo plano, e o site
     # na thread principal. daemon=True faz a thread do trabalhador fechar
     # junto se o programa principal for encerrado.
     threading.Thread(target=loop_trabalhador, daemon=True).start()
+    telegram_bot.iniciar_servico_telegram()
     app.run(host="0.0.0.0", port=5000)

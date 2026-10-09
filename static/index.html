@@ -54,6 +54,28 @@
     .btn-filtro { width:auto; min-height:30px; padding:4px 10px; border:1px solid #bec9bf; background:#fff; color:var(--muted); font:600 .78rem system-ui,sans-serif; border-radius:15px; cursor:pointer; margin-top:0; }
     .btn-filtro.ativo { background:var(--accent); color:#fff; border-color:var(--accent); }
     .empty { color:var(--muted); margin:0; }
+    
+    /* Abas de Navegacao */
+    .abas-navegacao { display:flex; gap:8px; margin-bottom:24px; border-bottom:2px solid var(--line); }
+    .btn-aba { width:auto; border:none; border-bottom:3px solid transparent; background:transparent; padding:12px 20px; font:700 .95rem system-ui,sans-serif; color:var(--muted); cursor:pointer; margin:0; border-radius:0; transition:all .2s; }
+    .btn-aba:hover { color:var(--ink); background:rgba(0,0,0,0.02); }
+    .btn-aba.ativa { color:var(--accent-dark); border-bottom-color:var(--accent); background:rgba(23,107,82,0.07); }
+    .badge-pendente { display:inline-block; background:var(--warn); color:#fff; border-radius:12px; padding:2px 7px; font-size:.75rem; font-weight:700; margin-left:6px; vertical-align:middle; }
+    .badge-pendente.tem-pendente { background:var(--danger); animation:pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity:1; } 50% { opacity:0.6; } 100% { opacity:1; } }
+
+    /* Cards e Tabela da Aba Telegram */
+    .card-tg { background:#fff; border:1px solid var(--line); border-radius:6px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.03); display:grid; gap:10px; margin-bottom:12px; }
+    .card-tg-header { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; }
+    .card-tg-body { font-family:system-ui,sans-serif; font-size:.92rem; color:var(--ink); }
+    .card-tg-orig { font-size:.84rem; color:var(--muted); background:#f9fafb; padding:8px 12px; border-radius:4px; border:1px dashed #d1d5db; margin-top:6px; }
+    .card-tg-orig summary { cursor:pointer; font-weight:600; color:var(--muted); }
+    .form-acao-tg { display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:#f4fbf7; padding:12px 14px; border-radius:6px; border:1px solid #cce8dc; margin-top:6px; }
+    .form-acao-tg input { min-height:38px; padding:6px 10px; font-size:.9rem; width:auto; flex:1; min-width:140px; margin:0; }
+    .btn-baixar-tg { width:auto; min-height:38px; margin:0; padding:6px 16px; font-size:.88rem; }
+    .btn-descartar-tg { width:auto; min-height:38px; margin:0; padding:6px 12px; border:1px solid #d1d5db; background:#fff; color:var(--muted); font-size:.85rem; border-radius:4px; cursor:pointer; }
+    .btn-descartar-tg:hover { border-color:var(--danger); color:var(--danger); background:#fef2f2; }
+    
     @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } }
   </style>
 </head>
@@ -61,8 +83,18 @@
 <main>
   <header>
     <h1>Central de gravacoes</h1>
-    <p>Cadastre um periodo. O trabalhador continua baixando mesmo quando esta pagina estiver fechada.</p>
+    <p>Cadastre um periodo ou receba direto do Telegram. O trabalhador baixa sem precisar manter a pagina aberta.</p>
   </header>
+
+  <nav class="abas-navegacao">
+    <button type="button" class="btn-aba ativa" data-alvo="painel-downloads">📥 Central de Downloads</button>
+    <button type="button" class="btn-aba" data-alvo="painel-telegram">
+      🤖 Solicitações Telegram
+      <span id="badge-telegram" class="badge-pendente" style="display:none;">0</span>
+    </button>
+  </nav>
+
+  <div id="painel-downloads">
   <div class="layout">
     <section>
       <h2>Novo download</h2>
@@ -117,6 +149,30 @@
       <div id="jobs"><p class="empty">Carregando...</p></div>
     </section>
   </div>
+  </div> <!-- fim #painel-downloads -->
+
+  <section id="painel-telegram" style="display:none; background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin:0 0 4px;">Solicitações do Telegram (Bot & Gemini)</h2>
+        <p id="telegram-status" style="margin:0; font-size:.85rem; color:var(--muted); font-family:system-ui,sans-serif;">Verificando conexão com o Telegram...</p>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" id="btn-recarregar-telegram" style="width:auto; min-height:36px; padding:6px 14px; margin-top:0; background:#fff; color:var(--ink); border:1px solid #bec9bf; font-size:.85rem;">🔄 Atualizar lista</button>
+      </div>
+    </div>
+
+    <div class="filtros">
+      <button type="button" class="btn-filtro-tg ativo" data-filtro="aguardando_ip">Aguardando IP</button>
+      <button type="button" class="btn-filtro-tg" data-filtro="baixando">Baixando / Concluídos</button>
+      <button type="button" class="btn-filtro-tg" data-filtro="todos">Todas</button>
+    </div>
+
+    <div id="lista-telegram">
+      <p class="empty">Carregando solicitações...</p>
+    </div>
+  </section>
+
   <footer style="margin-top:40px; text-align:center; padding:22px 0; border-top:1px solid var(--line); color:var(--muted); font-family:system-ui,sans-serif; font-size:.95rem;">
     <strong style="color:var(--ink);">Sempre confira os dados no ROCKET 🚀</strong>
   </footer>
@@ -429,8 +485,224 @@
     }
   });
 
+  // Controle de Abas
+  const btnsAbas = document.querySelectorAll('.btn-aba');
+  const painelDownloads = document.querySelector('#painel-downloads');
+  const painelTelegram = document.querySelector('#painel-telegram');
+  const badgeTelegram = document.querySelector('#badge-telegram');
+  const statusTelegramEl = document.querySelector('#telegram-status');
+  const listaTelegramEl = document.querySelector('#lista-telegram');
+  let filtroTelegramAtual = 'aguardando_ip';
+  let solicitacoesTelegram = [];
+
+  btnsAbas.forEach(btn => {
+    btn.addEventListener('click', () => {
+      btnsAbas.forEach(b => b.classList.remove('ativa'));
+      btn.classList.add('ativa');
+      const alvo = btn.dataset.alvo;
+      if (alvo === 'painel-downloads') {
+        painelDownloads.style.display = 'block';
+        painelTelegram.style.display = 'none';
+      } else {
+        painelDownloads.style.display = 'none';
+        painelTelegram.style.display = 'block';
+        atualizarTelegram();
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-filtro-tg').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-filtro-tg').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      filtroTelegramAtual = btn.dataset.filtro;
+      renderizarSolicitacoesTelegram();
+    });
+  });
+
+  document.querySelector('#btn-recarregar-telegram')?.addEventListener('click', atualizarTelegram);
+
+  async function atualizarTelegram() {
+    try {
+      const [resStatus, resSols] = await Promise.all([
+        fetch('/api/telegram/status'),
+        fetch('/api/telegram/solicitacoes')
+      ]);
+      const statusTg = await resStatus.json();
+      solicitacoesTelegram = await resSols.json();
+
+      const pendentes = statusTg.pendentes_ip || 0;
+      if (pendentes > 0) {
+        badgeTelegram.style.display = 'inline-block';
+        badgeTelegram.textContent = pendentes;
+        badgeTelegram.classList.add('tem-pendente');
+      } else {
+        badgeTelegram.style.display = 'none';
+        badgeTelegram.classList.remove('tem-pendente');
+      }
+
+      if (statusTelegramEl) {
+        if (statusTg.ativo) {
+          const usr = statusTg.usuario_conectado ? `${statusTg.usuario_conectado} (${statusTg.username ? '@' + statusTg.username : ''})` : 'Conta do Telegram';
+          statusTelegramEl.innerHTML = `<span style="color:var(--accent); font-weight:700;">● Online</span> | Conectado como: <strong>${usr}</strong> | Gemini: <strong>${statusTg.modelo_gemini}</strong> | Pendentes hoje: <strong>${pendentes}</strong>`;
+        } else if (!statusTg.sessao_autenticada) {
+          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">⚠️ Aguardando Login</span> | Execute <code>python autenticar_telegram.py</code> no terminal para autenticar sua conta.`;
+        } else {
+          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">○ Inativo</span> | ${statusTg.ultimo_erro || 'Verifique o arquivo .env'}`;
+        }
+      }
+
+      renderizarSolicitacoesTelegram();
+    } catch (e) {
+      console.warn('Erro ao atualizar Telegram:', e);
+    }
+  }
+
+  function renderizarSolicitacoesTelegram() {
+    if (!listaTelegramEl) return;
+    let lista = solicitacoesTelegram;
+    if (filtroTelegramAtual === 'aguardando_ip') {
+      lista = solicitacoesTelegram.filter(s => s.status === 'aguardando_ip');
+    } else if (filtroTelegramAtual === 'baixando') {
+      lista = solicitacoesTelegram.filter(s => ['baixando', 'concluido'].includes(s.status));
+    }
+
+    if (!lista.length) {
+      listaTelegramEl.innerHTML = `<p class="empty">Nenhuma solicitação ${filtroTelegramAtual === 'aguardando_ip' ? 'aguardando IP' : 'nessa categoria'}.</p>`;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    lista.forEach(item => {
+      const card = document.createElement('article');
+      card.className = 'card-tg';
+      card.dataset.id = item.id;
+
+      let badgeCor = 'background:#fef3c7; color:#92400e;';
+      let textoStatus = 'Aguardando IP';
+      if (item.status === 'baixando') {
+        badgeCor = 'background:#dbeafe; color:#1e40af;';
+        textoStatus = item.job_status ? `Baixando (${item.job_status})` : 'Baixando';
+      } else if (item.status === 'concluido' || item.job_status === 'concluido') {
+        badgeCor = 'background:#dcfce7; color:#166534;';
+        textoStatus = 'Concluído';
+      } else if (item.status === 'descartado') {
+        badgeCor = 'background:#f3f4f6; color:#4b5563;';
+        textoStatus = 'Descartado';
+      } else if (item.status === 'erro_leitura') {
+        badgeCor = 'background:#fee2e2; color:#991b1b;';
+        textoStatus = 'Erro Leitura';
+      }
+
+      card.innerHTML = `
+        <div class="card-tg-header">
+          <div>
+            <strong style="font-size:1.05rem;">${item.nome_escola || 'Escola ' + (item.codigo_escola || 'não informada')}</strong>
+            <span style="color:var(--muted); font-size:.85rem; margin-left:8px;">Código: <strong>${item.codigo_escola || '-'}</strong></span>
+          </div>
+          <span style="padding:3px 10px; border-radius:12px; font-weight:700; font-size:.78rem; ${badgeCor}">${textoStatus}</span>
+        </div>
+
+        <div class="card-tg-body">
+          <div style="display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 8px;">
+            <span>📹 Câmeras: <strong>${item.cameras || '1'}</strong></span>
+            <span>🕒 Período: <strong>${mostrarData(item.data_inicio)} até ${mostrarData(item.data_fim)}</strong></span>
+            <span>👤 Solicitante: <strong>${item.solicitante || 'Telegram'}</strong></span>
+            <span>📅 Recebido: <small style="color:var(--muted);">${mostrarData(item.recebido_em)}</small></span>
+          </div>
+
+          <details class="card-tg-orig">
+            <summary>Ver mensagem original recebida no Telegram</summary>
+            <p style="margin:6px 0 0; font-style:italic; white-space:pre-wrap;">"${item.mensagem_original}"</p>
+          </details>
+
+          ${item.status === 'aguardando_ip' ? `
+            <div class="form-acao-tg" data-solic-id="${item.id}">
+              <div style="flex:1; min-width:180px;">
+                <label style="margin:0 0 4px; font-size:.72rem;">Endereço IP da DVR</label>
+                <input type="text" class="input-ip" placeholder="Ex: 192.168.1.10" value="${item.dvr_ip || ''}">
+              </div>
+              <div style="width:140px;">
+                <label style="margin:0 0 4px; font-size:.72rem;">Senha da DVR</label>
+                <input type="password" class="input-senha" placeholder="Opcional">
+              </div>
+              <div style="display:flex; gap:6px; align-items:flex-end;">
+                <button type="button" class="btn-baixar-tg" onclick="iniciarSolicitacao(${item.id}, this)">▶ Baixar e Salvar IP</button>
+                <button type="button" class="btn-descartar-tg" onclick="descartarSolicitacao(${item.id}, this)">✕ Descartar</button>
+              </div>
+            </div>
+          ` : `
+            <div style="margin-top:8px; font-size:.85rem; color:var(--muted); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <span>DVR IP: <strong>${item.dvr_ip || '-'}</strong> ${item.job_id ? `| Job #${item.job_id}` : ''}</span>
+              ${item.job_id ? `<button type="button" class="btn-filtro" style="margin:0;" onclick="irParaJob(${item.job_id})">Ver progresso na Central ➔</button>` : ''}
+            </div>
+          `}
+        </div>
+      `;
+
+      fragment.appendChild(card);
+    });
+
+    listaTelegramEl.innerHTML = '';
+    listaTelegramEl.appendChild(fragment);
+  }
+
+  async function iniciarSolicitacao(id, botao) {
+    const card = botao.closest('.card-tg');
+    const inputIp = card.querySelector('.input-ip');
+    const inputSenha = card.querySelector('.input-senha');
+    const ip = inputIp.value.trim();
+    const senha = inputSenha ? inputSenha.value.trim() : '';
+
+    if (!ip) {
+      alert('Por favor, informe o IP da DVR da escola.');
+      inputIp.focus();
+      return;
+    }
+
+    botao.disabled = true;
+    botao.textContent = 'Iniciando...';
+    try {
+      const res = await fetch(`/api/telegram/solicitacoes/${id}/iniciar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dvr_ip: ip, senha: senha })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.erro || 'Erro ao iniciar download');
+
+      await carregarCatalogoEscolas();
+      await atualizarJobs();
+      await atualizarTelegram();
+    } catch (e) {
+      alert('Erro: ' + e.message);
+      botao.disabled = false;
+      botao.textContent = '▶ Baixar e Salvar IP';
+    }
+  }
+
+  async function descartarSolicitacao(id, botao) {
+    if (!confirm('Deseja realmente descartar esta solicitação do Telegram?')) return;
+    botao.disabled = true;
+    try {
+      const res = await fetch(`/api/telegram/solicitacoes/${id}/descartar`, { method: 'POST' });
+      if (!res.ok) throw new Error('Falha ao descartar');
+      await atualizarTelegram();
+    } catch (e) {
+      alert('Erro: ' + e.message);
+      botao.disabled = false;
+    }
+  }
+
+  function irParaJob(jobId) {
+    btnsAbas[0].click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   carregarCatalogoEscolas();
   atualizarJobs(); setInterval(atualizarJobs, 5000);
+  atualizarTelegram(); setInterval(atualizarTelegram, 5000);
 </script>
 </body>
 </html>
+
