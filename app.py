@@ -542,11 +542,16 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
     )
 
     if ffmpeg_bin:
+        args_tempo = []
+        if deslocamento > 0.05:
+            args_tempo.extend(["-ss", f"{deslocamento:.3f}"])
+        if duracao > 0:
+            args_tempo.extend(["-t", f"{duracao:.3f}"])
+
         # Primeira tentativa: copia o fluxo original, sem recodificar H.265/H.264.
         comando_codec = [
             ffmpeg_bin, "-y",
-            "-ss", f"{deslocamento:.3f}",
-            "-t", f"{duracao:.3f}",
+            *args_tempo,
             "-i", origem,
             "-map", "0:v:0",
             "-c:v", "copy",
@@ -569,8 +574,7 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
         # Segunda tentativa: recodificação H.264 para reprodução ampla no navegador.
         comando = [
             ffmpeg_bin, "-y",
-            "-ss", f"{deslocamento:.3f}",
-            "-t", f"{duracao:.3f}",
+            *args_tempo,
             "-i", origem,
             "-c:v", "libx264",
             "-preset", "ultrafast",
@@ -582,13 +586,34 @@ def converter_e_cortar(origem, destino, inicio_trecho, fim_trecho, data_inicio_p
         resultado = subprocess.run(
             comando, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3600
         )
-        if resultado.returncode != 0:
-            if os.path.exists(temporario_h264):
-                os.remove(temporario_h264)
-            raise RuntimeError(f"FFmpeg falhou ao converter/cortar: {resultado.stderr.decode('utf-8', errors='ignore')}")
+        if resultado.returncode == 0 and os.path.isfile(temporario_h264) and os.path.getsize(temporario_h264) > 1000:
+            os.replace(temporario_h264, destino)
+            return
 
-        if not os.path.isfile(temporario_h264) or os.path.getsize(temporario_h264) == 0:
-            raise RuntimeError("O FFmpeg nao gerou um arquivo valido")
+        # Terceira tentativa: recodificação com -an (sem áudio) caso o canal de áudio da DVR seja incompatível
+        comando_sem_audio = [
+            ffmpeg_bin, "-y",
+            *args_tempo,
+            "-i", origem,
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "23",
+            "-an",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            temporario_h264
+        ]
+        resultado_an = subprocess.run(
+            comando_sem_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3600
+        )
+        if resultado_an.returncode == 0 and os.path.isfile(temporario_h264) and os.path.getsize(temporario_h264) > 1000:
+            os.replace(temporario_h264, destino)
+            return
+
+        if os.path.exists(temporario_h264):
+            os.remove(temporario_h264)
+        erro_final = (resultado.stderr or resultado_an.stderr or b"").decode("utf-8", errors="ignore")[-400:]
+        raise RuntimeError(f"FFmpeg falhou ao converter/cortar: {erro_final}")
 
         os.replace(temporario_h264, destino)
         return
@@ -776,6 +801,12 @@ def baixar_pendentes_do_job(
 
                 # 2. Modo ISAPI (Porta 80) caso o SDK não tenha sido usado ou tenha falhado
                 if not sucesso_download:
+                    # Limpa qualquer resíduo temporário .hik antes de acionar o fallback
+                    if os.path.exists(origem):
+                        try:
+                            os.remove(origem)
+                        except OSError:
+                            pass
                     atualizar_status_job("baixando", protocolo="ISAPI")
                     try:
                         if uri.startswith("sdk://"):
@@ -1263,6 +1294,12 @@ def listar_jobs():
 def saude_aplicacao():
     resposta = dict(worker_state)
     resposta["fuso"] = NOME_FUSO
+    try:
+        with banco_lock:
+            total_c = banco.execute("SELECT COUNT(*) FROM gravacoes WHERE status='concluido'").fetchone()[0]
+        resposta["total_concluidas"] = total_c or 0
+    except Exception:
+        resposta["total_concluidas"] = 0
     return jsonify(resposta)
 
 

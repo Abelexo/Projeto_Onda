@@ -717,7 +717,9 @@ def baixar_por_tempo_sdk(
 
             while True:
                 if checar_cancelado and checar_cancelado():
-                    _sdk.NET_DVR_StopGetFile(handle)
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     if os.path.exists(caminho_arquivo_temp):
                         try:
                             os.remove(caminho_arquivo_temp)
@@ -731,6 +733,9 @@ def baixar_por_tempo_sdk(
                     if callback_progresso:
                         callback_progresso(100)
                     print(f"[SDK] Download concluido com 100% no canal {canal_utilizado}.")
+                    # Fecha o handle na DLL imediatamente para descarregar o buffer e liberar o arquivo no Windows!
+                    _sdk.NET_DVR_StopGetFile(handle)
+                    handle = -1
                     break
 
                 elif pos < 0 or pos > 100:
@@ -740,7 +745,21 @@ def baixar_por_tempo_sdk(
                         time.sleep(1)
                         continue
 
+                    # Se a DVR encerrou a conexão (código 200 de término/exceção ou pos < 0),
+                    # mas o download já estava em >= 90% e o arquivo tem dados substanciais:
+                    tam_baixado = os.path.getsize(caminho_arquivo_temp) if os.path.exists(caminho_arquivo_temp) else 0
+                    if (ultimo_pos >= 90 or pos == 200) and tam_baixado > 1024 * 1024:
+                        print(f"[SDK] Aviso: DVR encerrou canal (pos: {pos}, ultimo_pos: {ultimo_pos}%), arquivo com {tam_baixado} bytes. Concluindo normalmente.")
+                        if callback_progresso:
+                            callback_progresso(100)
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
+                        break
+
                     cod_erro_pos = _sdk.NET_DVR_GetLastError()
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     raise RuntimeError(
                         f"Download SDK falhou durante transmissao (posicao: {pos}, {formatar_erro_sdk(cod_erro_pos)})"
                     )
@@ -750,9 +769,22 @@ def baixar_por_tempo_sdk(
                     ultimo_avanco = time.time()
                 elif pos == 0 and (time.time() - tempo_inicio > 20.0):
                     # Se após 20s a DVR conectou mas não enviou nenhum fluxo de dados
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     raise RuntimeError("Timeout no download SDK: a DVR abriu o canal mas não transmitiu fluxo de vídeo após 20s.")
                 elif time.time() - ultimo_avanco > 60.0:
                     # Se a transmissão congelou na mesma porcentagem por mais de 60s
+                    tam_baixado = os.path.getsize(caminho_arquivo_temp) if os.path.exists(caminho_arquivo_temp) else 0
+                    if ultimo_pos >= 90 and tam_baixado > 1024 * 1024:
+                        print(f"[SDK] Transmissão estagnou em {pos}%, mas já possui {tam_baixado} bytes gravados. Concluindo.")
+                        if handle >= 0:
+                            _sdk.NET_DVR_StopGetFile(handle)
+                            handle = -1
+                        break
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     raise RuntimeError(f"Timeout no download SDK: transmissão congelada em {pos}% por mais de 60s.")
 
                 if callback_progresso and pos >= 0:
@@ -760,23 +792,49 @@ def baixar_por_tempo_sdk(
 
                 time.sleep(1)
 
+            # Garante que o handle foi fechado
+            if handle >= 0:
+                _sdk.NET_DVR_StopGetFile(handle)
+                handle = -1
+
+            # Pausa breve para o sistema de arquivos do Windows liberar o lock de escrita
+            time.sleep(0.3)
+
             # Move o arquivo temporario da pasta temp local para o destino final definitivo
-            if os.path.exists(caminho_arquivo_temp):
+            if os.path.exists(caminho_arquivo_temp) and os.path.getsize(caminho_arquivo_temp) > 0:
                 if os.path.exists(caminho_absoluto):
                     try:
                         os.remove(caminho_absoluto)
                     except OSError:
                         pass
-                shutil.move(caminho_arquivo_temp, caminho_absoluto)
+                try:
+                    shutil.move(caminho_arquivo_temp, caminho_absoluto)
+                except Exception as erro_mv:
+                    print(f"[SDK] shutil.move gerou aviso ({erro_mv}). Aplicando copy2 resiliente...")
+                    shutil.copy2(caminho_arquivo_temp, caminho_absoluto)
+                    try:
+                        os.remove(caminho_arquivo_temp)
+                    except OSError:
+                        pass
                 return True
             else:
-                raise RuntimeError("O arquivo baixado nao foi encontrado no disco apos a conclusao.")
+                raise RuntimeError("O arquivo baixado nao foi encontrado no disco ou possui 0 bytes apos a conclusao.")
 
         finally:
-            _sdk.NET_DVR_StopGetFile(handle)
+            if handle >= 0:
+                try:
+                    _sdk.NET_DVR_StopGetFile(handle)
+                except Exception:
+                    pass
+                handle = -1
 
     finally:
-        _sdk.NET_DVR_Logout_V30(user_id)
+        if user_id >= 0:
+            try:
+                _sdk.NET_DVR_Logout_V30(user_id)
+            except Exception:
+                pass
+            user_id = -1
         if os.path.exists(caminho_arquivo_temp):
             try:
                 os.remove(caminho_arquivo_temp)

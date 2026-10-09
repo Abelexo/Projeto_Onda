@@ -93,14 +93,29 @@
     .btn-descartar-tg { min-height:42px; margin:0; padding:8px 12px; border:1px solid #d1d5db; background:#fff; color:var(--muted); border-radius:4px; cursor:pointer; white-space:nowrap; font-size:.85rem; }
     .btn-descartar-tg:hover { border-color:var(--danger); color:var(--danger); background:#fef2f2; }
     
-    @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } }
+    .card-contador { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 18px; box-shadow:0 3px 12px rgba(23,33,27,.05); white-space:nowrap; user-select:none; }
+    .card-contador-icon { font-size:1.6rem; line-height:1; }
+    .card-contador-info { display:flex; flex-direction:column; }
+    .card-contador-label { font:700 .72rem/1.2 system-ui,sans-serif; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+    .card-contador-numero { font:800 1.55rem/1.1 system-ui,sans-serif; color:var(--accent-dark); }
+
+    @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } .card-contador { margin-top:14px; justify-content:center; } }
   </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>Central de gravacoes</h1>
-    <p>Cadastre um periodo ou acompanhe pedidos. O trabalhador baixa sem precisar manter a pagina aberta.</p>
+    <div>
+      <h1>Central de gravacoes</h1>
+      <p>Cadastre um periodo ou acompanhe pedidos. O trabalhador baixa sem precisar manter a pagina aberta.</p>
+    </div>
+    <div class="card-contador" title="Total de gravações baixadas e concluídas com sucesso">
+      <div class="card-contador-icon">🎬</div>
+      <div class="card-contador-info">
+        <span class="card-contador-label">Gravações Concluídas</span>
+        <span id="contador-concluidas" class="card-contador-numero">0</span>
+      </div>
+    </div>
   </header>
 
   <nav class="abas-navegacao">
@@ -344,6 +359,15 @@
       saude.textContent = estadoWorker.erro ? `Trabalhador com erro: ${estadoWorker.erro}` : `Trabalhador: ${estadoWorker.status}`;
       saude.classList.toggle('erro', Boolean(estadoWorker.erro));
       renderizarJobs();
+
+      // Atualiza o contador de gravações concluídas
+      const elContador = document.querySelector('#contador-concluidas');
+      if (elContador) {
+        const doHealth = (estadoWorker && typeof estadoWorker.total_concluidas === 'number') ? estadoWorker.total_concluidas : null;
+        const dosJobs = (todosJobs || []).reduce((acc, j) => acc + (j.trechos_concluidos || (j.arquivos ? j.arquivos.length : (j.status === 'concluido' ? 1 : 0))), 0);
+        const total = doHealth !== null ? Math.max(doHealth, dosJobs) : dosJobs;
+        elContador.textContent = total;
+      }
     } catch (erro) {
       saude.textContent = 'Trabalhador indisponivel.';
       saude.classList.add('erro');
@@ -607,20 +631,71 @@
       return;
     }
 
-    // Preserva quais cards o usuario ja tinha aberto para nao fecha-los ao atualizar a cada 5s
+    // 1. Preserva quais acordeões estavam abertos
     const idsAbertos = new Set();
-    listaTelegramEl.querySelectorAll('details.card-tg[open]').forEach(det => {
-      if (det.dataset.id) idsAbertos.add(det.dataset.id);
+    const idsMsgAberta = new Set();
+    const idsAlterarAberta = new Set();
+    const valoresDigitados = new Map();
+
+    listaTelegramEl.querySelectorAll('details.card-tg').forEach(card => {
+      const id = card.dataset.id;
+      if (!id) return;
+      if (card.open) idsAbertos.add(id);
+
+      const detMsg = card.querySelector('details.card-tg-orig');
+      if (detMsg && detMsg.open) idsMsgAberta.add(id);
+
+      const detAlt = card.querySelector('details.secao-alterar');
+      if (detAlt && detAlt.open) idsAlterarAberta.add(id);
+
+      valoresDigitados.set(id, {
+        cams: card.querySelector('.edit-cameras')?.value,
+        ini: card.querySelector('.edit-inicio')?.value,
+        fim: card.querySelector('.edit-fim')?.value,
+        cod: card.querySelector('.edit-codigo')?.value,
+        nome: card.querySelector('.edit-nome')?.value,
+        ip: card.querySelector('.input-ip')?.value,
+        senha: card.querySelector('.input-senha')?.value,
+      });
     });
+
+    // 2. Lembra o foco e seleção do cursor caso o operador esteja digitando em algum campo
+    const elAtivo = document.activeElement;
+    let focoInfo = null;
+    if (elAtivo && listaTelegramEl.contains(elAtivo)) {
+      const cardFoco = elAtivo.closest('details.card-tg');
+      if (cardFoco && cardFoco.dataset.id) {
+        focoInfo = {
+          id: cardFoco.dataset.id,
+          selector: elAtivo.className ? '.' + elAtivo.className.split(' ')[0] : elAtivo.tagName.toLowerCase(),
+          start: elAtivo.selectionStart,
+          end: elAtivo.selectionEnd
+        };
+      }
+    }
 
     const fragment = document.createDocumentFragment();
     lista.forEach(item => {
       const card = document.createElement('details');
       card.className = 'card-tg';
-      card.dataset.id = String(item.id);
-      if (idsAbertos.has(String(item.id))) {
+      const idStr = String(item.id);
+      card.dataset.id = idStr;
+      if (idsAbertos.has(idStr)) {
         card.open = true;
       }
+
+      // Restaura valores digitados pelo usuário caso ele tenha editado
+      const valAnt = valoresDigitados.get(idStr) || {};
+      const valCams = valAnt.cams !== undefined ? valAnt.cams : (item.cameras || '1');
+      const valIni = valAnt.ini !== undefined ? valAnt.ini : formatarParaInputLocal(item.data_inicio);
+      const valFim = valAnt.fim !== undefined ? valAnt.fim : formatarParaInputLocal(item.data_fim);
+      const valCod = valAnt.cod !== undefined ? valAnt.cod : (item.codigo_escola || '');
+      const valNome = valAnt.nome !== undefined ? valAnt.nome : (item.nome_escola || '');
+      const valIp = valAnt.ip !== undefined ? valAnt.ip : (item.dvr_ip || '');
+      const valSenha = valAnt.senha !== undefined ? valAnt.senha : 'IINms4562022';
+
+      const openMsg = idsMsgAberta.has(idStr) ? 'open' : '';
+      const openAlt = idsAlterarAberta.has(idStr) ? 'open' : '';
 
       let badgeCor = 'background:#fef3c7; color:#92400e;';
       let textoStatus = 'Aguardando IP';
@@ -658,33 +733,33 @@
             ${item.dvr_ip ? `<span>🌐 DVR IP: <strong style="color:var(--ink);">${item.dvr_ip}</strong></span>` : ''}
           </div>
 
-          <details class="card-tg-orig">
+          <details class="card-tg-orig" ${openMsg}>
             <summary>Ver mensagem original recebida</summary>
             <p style="margin:6px 0 0; font-style:italic; white-space:pre-wrap;">"${item.mensagem_original}"</p>
           </details>
 
-          <details class="secao-alterar">
+          <details class="secao-alterar" ${openAlt}>
             <summary>✏️ Alterar informações da gravação</summary>
             <div class="grid-alterar">
               <div>
                 <label>Câmeras</label>
-                <input type="text" class="edit-cameras" value="${item.cameras || '1'}" placeholder="Ex: 1,2">
+                <input type="text" class="edit-cameras" value="${valCams}" placeholder="Ex: 1,2">
               </div>
               <div>
                 <label>Data/Hora Início</label>
-                <input type="datetime-local" class="edit-inicio" value="${formatarParaInputLocal(item.data_inicio)}">
+                <input type="datetime-local" class="edit-inicio" value="${valIni}">
               </div>
               <div>
                 <label>Data/Hora Fim</label>
-                <input type="datetime-local" class="edit-fim" value="${formatarParaInputLocal(item.data_fim)}">
+                <input type="datetime-local" class="edit-fim" value="${valFim}">
               </div>
               <div>
                 <label>Código Escola</label>
-                <input type="text" class="edit-codigo" value="${item.codigo_escola || ''}">
+                <input type="text" class="edit-codigo" value="${valCod}">
               </div>
               <div>
                 <label>Nome Escola</label>
-                <input type="text" class="edit-nome" value="${item.nome_escola || ''}">
+                <input type="text" class="edit-nome" value="${valNome}">
               </div>
             </div>
           </details>
@@ -693,11 +768,11 @@
             <div class="form-acao-tg" data-solic-id="${item.id}">
               <div>
                 <label>Endereço IP da DVR</label>
-                <input type="text" class="input-ip" placeholder="Ex: 192.168.1.10" value="${item.dvr_ip || ''}">
+                <input type="text" class="input-ip" placeholder="Ex: 192.168.1.10" value="${valIp}">
               </div>
               <div>
                 <label>Senha da DVR</label>
-                <input type="password" class="input-senha" placeholder="Senha da DVR" value="IINms4562022">
+                <input type="password" class="input-senha" placeholder="Senha da DVR" value="${valSenha}">
               </div>
               <div>
                 <button type="button" class="btn-baixar-tg" onclick="iniciarSolicitacao(${item.id}, this)">▶ Baixar e Salvar IP</button>
@@ -720,6 +795,20 @@
 
     listaTelegramEl.innerHTML = '';
     listaTelegramEl.appendChild(fragment);
+
+    // Restaura o foco e a seleção de texto caso o operador estivesse digitando
+    if (focoInfo) {
+      const cardFoco = listaTelegramEl.querySelector(`details.card-tg[data-id="${focoInfo.id}"]`);
+      if (cardFoco) {
+        const campoFoco = cardFoco.querySelector(focoInfo.selector);
+        if (campoFoco) {
+          campoFoco.focus();
+          if (typeof focoInfo.start === 'number' && typeof focoInfo.end === 'number') {
+            try { campoFoco.setSelectionRange(focoInfo.start, focoInfo.end); } catch (e) {}
+          }
+        }
+      }
+    }
   }
 
   async function iniciarSolicitacao(id, botao) {
