@@ -3,15 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Central de gravacoes</title>
+  <title>Central de Gravações</title>
   <style>
     :root { color-scheme: light; --ink:#17211b; --muted:#66736a; --paper:#f4f1e8; --panel:#fffdf8; --line:#d9ded5; --accent:#176b52; --accent-dark:#0d4b3a; --warn:#9a5b12; --danger:#a43f32; }
     * { box-sizing:border-box; }
     body { margin:0; background:linear-gradient(135deg,#e7eee6 0%,var(--paper) 54%,#e9e4d8 100%); color:var(--ink); font:16px/1.45 Georgia, serif; min-height:100vh; }
-    main { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:42px 0 64px; }
-    header { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:30px; }
-    h1 { font-size:clamp(2rem,5vw,4.2rem); line-height:.95; margin:0; letter-spacing:0; max-width:600px; }
-    header p { max-width:310px; margin:0; color:var(--muted); }
+    main { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:34px 0 64px; }
+    header { display:flex; justify-content:space-between; gap:24px; align-items:center; margin-bottom:26px; padding-bottom:18px; border-bottom:1px solid rgba(23,33,27,.09); }
+    .header-brand { display:flex; align-items:center; gap:16px; }
+    .header-logo { width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); color:#fff; display:flex; align-items:center; justify-content:center; font-size:1.55rem; box-shadow:0 6px 16px rgba(23,107,82,.22); flex-shrink:0; }
+    .header-tag { display:inline-block; font:700 .68rem/1 system-ui,-apple-system,sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-dark); background:#dceee5; padding:4px 9px; border-radius:20px; margin-bottom:5px; }
+    h1 { font:800 clamp(1.65rem, 3vw, 2.25rem)/1.12 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; margin:0; letter-spacing:-.02em; color:var(--ink); }
+    header p { max-width:520px; margin:5px 0 0; color:var(--muted); font:400 .92rem/1.4 system-ui,-apple-system,sans-serif; }
+    .card-contador-numero { font:800 1.45rem/1.1 system-ui,-apple-system,sans-serif; color:var(--accent-dark); }
+
+    /* Botão do Rocket + Indicador Online/Offline da Unidade */
+    .painel-unidade-rocket { display:none; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:9px 12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; font-family:system-ui,-apple-system,sans-serif; flex-wrap:wrap; }
+    .btn-rocket-unidade { display:inline-flex; align-items:center; gap:7px; padding:6px 12px; background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%); color:#fff !important; text-decoration:none; border-radius:5px; font:700 .82rem/1.2 system-ui,sans-serif; box-shadow:0 2px 6px rgba(37,99,235,.22); transition:all .15s ease; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .btn-rocket-unidade:hover { background:linear-gradient(135deg,#1d4ed8 0%,#1e40af 100%); transform:translateY(-1px); }
+    .btn-rocket-mini { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:#eff6ff; color:#1d4ed8 !important; border:1px solid #bfdbfe; border-radius:12px; font:700 .74rem/1.1 system-ui,sans-serif; text-decoration:none; transition:all .15s ease; white-space:nowrap; }
+    .btn-rocket-mini:hover { background:#dbeafe; border-color:#93c5fd; transform:translateY(-1px); }
+    .badge-status-dvr { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px; font:700 .76rem/1 system-ui,sans-serif; white-space:nowrap; border:1px solid transparent; }
+    .badge-status-dvr.online { background:#dcfce7; color:#166534; border-color:#86efac; }
+    .badge-status-dvr.offline { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+    .badge-status-dvr.verificando { background:#f1f5f9; color:#475569; border-color:#cbd5e1; }
+    .bolinha-status { display:inline-block; width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .bolinha-status.online { background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.22); }
+    .bolinha-status.offline { background:#dc2626; box-shadow:0 0 0 3px rgba(220,38,38,.2); }
+    .bolinha-status.verificando { background:#94a3b8; animation:pulse 1.2s infinite; }
     .layout { display:grid; grid-template-columns:minmax(320px, .9fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
     section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; min-width:0; }
     h2 { margin:0 0 18px; font-size:1.35rem; }
@@ -130,9 +149,13 @@
 <body>
 <main>
   <header>
-    <div>
-      <h1>Central de gravacoes</h1>
-      <p>Cadastre um periodo ou acompanhe pedidos. O trabalhador baixa sem precisar manter a pagina aberta.</p>
+    <div class="header-brand">
+      <div class="header-logo" aria-hidden="true">📹</div>
+      <div>
+        <span class="header-tag">Projeto Onda • Monitoramento Escolar</span>
+        <h1>Central de Gravações</h1>
+        <p>Cadastre um período ou acompanhe pedidos em tempo real. O trabalhador baixa em segundo plano sem precisar manter a página aberta.</p>
+      </div>
     </div>
     <div class="card-contador" title="Total de gravações baixadas e concluídas com sucesso">
       <div class="card-contador-icon">🎬</div>
@@ -160,6 +183,18 @@
         <label for="codigo_escola">Codigo da escola (obrigatorio)</label>
         <input id="codigo_escola" name="codigo_escola" list="lista_codigos" placeholder="Ex: 3140" required autocomplete="off">
         <datalist id="lista_codigos"></datalist>
+
+        <!-- Botão dinâmico do Rocket + Indicador Online/Offline da Unidade (só aparece ao informar o código) -->
+        <div id="painel-unidade-rocket" class="painel-unidade-rocket">
+          <a id="btn-rocket-unidade" class="btn-rocket-unidade" href="https://org.rocket.sasi.io/protected/sites?q=" target="_blank" rel="noopener noreferrer" title="Abrir informações desta unidade no Rocket">
+            <span>🚀</span>
+            <span id="texto-rocket-unidade">Unidade</span>
+          </a>
+          <span id="badge-status-dvr" class="badge-status-dvr verificando" title="Status de conexão da DVR desta unidade">
+            <span id="bolinha-status-dvr" class="bolinha-status verificando"></span>
+            <span id="texto-status-dvr">Verificando...</span>
+          </span>
+        </div>
 
         <label for="escola">Nome da escola</label>
         <input id="escola" name="escola" list="lista_nomes" placeholder="Escola central" autocomplete="off">
@@ -457,8 +492,21 @@
 
       const divConteudo = article.querySelector('.job-conteudo') || article.firstElementChild;
 
+      const dvrOfflineNoJob = ['aguardando_conexao', 'erro'].includes(job.status);
+      const classeBolinhaJob = dvrOfflineNoJob ? 'offline' : 'online';
+      const tituloBolinhaJob = dvrOfflineNoJob
+        ? 'DVR Offline / Aguardando reconexão'
+        : 'DVR Online / Conectada';
+      const botaoRocketJob = job.codigo_escola
+        ? `<a class="btn-rocket-mini" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(job.codigo_escola)}" target="_blank" rel="noopener noreferrer" title="Abrir unidade ${job.codigo_escola} no Rocket">🚀 ${job.codigo_escola} - ${job.escola || 'Unidade'}</a>`
+        : '';
+
       const htmlInfo = `
-        <strong>${job.escola || job.dvr_ip}</strong>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:3px;">
+          <span class="bolinha-status ${classeBolinhaJob}" title="${tituloBolinhaJob}"></span>
+          <strong style="display:inline;">${job.escola || job.dvr_ip}</strong>
+          ${botaoRocketJob}
+        </div>
         <small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong>
         <span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>
         ${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
@@ -563,12 +611,12 @@
       saude.classList.toggle('erro', Boolean(estadoWorker.erro));
       renderizarJobs();
 
-      // Atualiza o contador de gravações concluídas
+      // Atualiza o contador de gravações concluídas (conta cada pedido/job concluído, não os trechos individuais)
       const elContador = document.querySelector('#contador-concluidas');
       if (elContador) {
+        const dosJobs = (todosJobs || []).filter(j => j.status === 'concluido').length;
         const doHealth = (estadoWorker && typeof estadoWorker.total_concluidas === 'number') ? estadoWorker.total_concluidas : null;
-        const dosJobs = (todosJobs || []).reduce((acc, j) => acc + (j.trechos_concluidos || (j.arquivos ? j.arquivos.length : (j.status === 'concluido' ? 1 : 0))), 0);
-        const total = doHealth !== null ? Math.max(doHealth, dosJobs) : dosJobs;
+        const total = doHealth !== null ? doHealth : dosJobs;
         elContador.textContent = total;
       }
     } catch (erro) {
@@ -579,7 +627,7 @@
   }
 
   async function cancelarJob(jobId) {
-    if (!window.confirm('Cancelar este download? Os trechos ja concluidos serao preservados.')) return;
+    if (!window.confirm('Cancelar este download e remove-lo da lista?')) return;
     try {
       const resposta = await fetch(`/api/jobs/${jobId}/cancel`, { method:'POST' });
       const retorno = await resposta.json();
@@ -651,6 +699,100 @@
     }
   }
 
+  const painelUnidadeRocket = document.querySelector('#painel-unidade-rocket');
+  const btnRocketUnidade = document.querySelector('#btn-rocket-unidade');
+  const textoRocketUnidade = document.querySelector('#texto-rocket-unidade');
+  const badgeStatusDvr = document.querySelector('#badge-status-dvr');
+  const bolinhaStatusDvr = document.querySelector('#bolinha-status-dvr');
+  const textoStatusDvr = document.querySelector('#texto-status-dvr');
+  let timerStatusDvrDebounce = null;
+  let tokenBuscaStatusDvr = 0;
+
+  async function verificarStatusDvrUnidade(silencioso = false) {
+    const cod = inputCodigo.value.trim();
+    const ipDigitado = inputIp.value.trim();
+    const nomeDigitado = inputEscola.value.trim();
+    const portaSdk = document.querySelector('#porta_sdk')?.value.trim() || '8000';
+
+    if (!cod) {
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
+      return;
+    }
+
+    // Exibe a barra com o botão do Rocket (🚀 + Unidade ao lado)
+    if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'flex';
+    const itemCat = mapaEscolasPorCodigo.get(cod);
+    const nomeUnidade = nomeDigitado || (itemCat && itemCat.nome) || `Unidade ${cod}`;
+    if (btnRocketUnidade) {
+      btnRocketUnidade.href = `https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(cod)}`;
+    }
+    if (textoRocketUnidade) {
+      textoRocketUnidade.textContent = `${cod} - ${nomeUnidade}`;
+    }
+
+    const ipAlvo = ipDigitado || (itemCat && itemCat.dvr_ip) || '';
+    if (!ipAlvo) {
+      if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr offline';
+      if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status offline';
+      if (textoStatusDvr) textoStatusDvr.textContent = 'Offline (Sem IP)';
+      return;
+    }
+
+    const meuToken = ++tokenBuscaStatusDvr;
+    if (!silencioso) {
+      if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr verificando';
+      if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status verificando';
+      if (textoStatusDvr) textoStatusDvr.textContent = 'Verificando...';
+    }
+
+    try {
+      const qs = new URLSearchParams({ ip: ipAlvo, codigo: cod, porta_sdk: portaSdk });
+      const res = await fetch(`/api/dvr/status?${qs.toString()}`);
+      if (meuToken !== tokenBuscaStatusDvr) return;
+      const dados = await res.json();
+      if (dados.online) {
+        if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr online';
+        if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status online';
+        if (textoStatusDvr) textoStatusDvr.textContent = 'Online';
+      } else {
+        if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr offline';
+        if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status offline';
+        if (textoStatusDvr) textoStatusDvr.textContent = 'Offline';
+      }
+    } catch (e) {
+      if (meuToken !== tokenBuscaStatusDvr) return;
+      if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr offline';
+      if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status offline';
+      if (textoStatusDvr) textoStatusDvr.textContent = 'Offline';
+    }
+  }
+
+  function agendarVerificacaoStatusDvr(delay = 300) {
+    const cod = inputCodigo.value.trim();
+    if (!cod) {
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
+      return;
+    }
+    if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'flex';
+    const itemCat = mapaEscolasPorCodigo.get(cod);
+    const nomeUnidade = inputEscola.value.trim() || (itemCat && itemCat.nome) || `Unidade ${cod}`;
+    if (btnRocketUnidade) {
+      btnRocketUnidade.href = `https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(cod)}`;
+    }
+    if (textoRocketUnidade) {
+      textoRocketUnidade.textContent = `${cod} - ${nomeUnidade}`;
+    }
+    clearTimeout(timerStatusDvrDebounce);
+    timerStatusDvrDebounce = setTimeout(() => verificarStatusDvrUnidade(false), delay);
+  }
+
+  // Re-verifica automaticamente a cada 12s enquanto o usuário estiver com um código preenchido
+  setInterval(() => {
+    if (inputCodigo && inputCodigo.value.trim()) {
+      verificarStatusDvrUnidade(true);
+    }
+  }, 12000);
+
   function aplicarEscola(item) {
     if (!item) return;
     if (item.codigo) inputCodigo.value = item.codigo;
@@ -664,12 +806,46 @@
       mensagem.style.color = 'var(--muted)';
       mensagem.textContent = `Escola ${item.nome} selecionada. Digite o IP da DVR abaixo.`;
     }
+    agendarVerificacaoStatusDvr(80);
+  }
+
+  let timerBuscaRocket = null;
+  async function tentarAutocompletarViaRocketLocal(cod) {
+    if (!cod || cod.length < 2) return;
+    try {
+      const res = await fetch(`/api/rocket/buscar/${encodeURIComponent(cod)}`);
+      if (!res.ok) return;
+      const dados = await res.json();
+      if (!dados || !dados.sucesso) return;
+      if (inputCodigo.value.trim() !== cod) return;
+      if (dados.nome && !inputEscola.value.trim()) {
+        inputEscola.value = dados.nome;
+      }
+      if (dados.dvr_ip && !inputIp.value.trim()) {
+        inputIp.value = dados.dvr_ip;
+        mensagem.style.color = 'var(--accent-dark)';
+        mensagem.textContent = `Dados sincronizados automaticamente do Rocket 🚀 (${dados.nome || cod} - IP: ${dados.dvr_ip})`;
+      }
+      await carregarCatalogoEscolas();
+      agendarVerificacaoStatusDvr(50);
+    } catch {
+      // Módulo local do Rocket ausente ou desconectado; segue funcionamento normal
+    }
   }
 
   inputCodigo.addEventListener('input', () => {
     const cod = inputCodigo.value.trim();
     if (mapaEscolasPorCodigo.has(cod)) {
-      aplicarEscola(mapaEscolasPorCodigo.get(cod));
+      const item = mapaEscolasPorCodigo.get(cod);
+      aplicarEscola(item);
+      if (!item.dvr_ip) {
+        clearTimeout(timerBuscaRocket);
+        timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 450);
+      }
+    } else {
+      agendarVerificacaoStatusDvr(300);
+      clearTimeout(timerBuscaRocket);
+      timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 500);
     }
   });
 
@@ -677,6 +853,14 @@
     const nm = inputEscola.value.trim().toLowerCase();
     if (mapaEscolasPorNome.has(nm)) {
       aplicarEscola(mapaEscolasPorNome.get(nm));
+    } else if (inputCodigo.value.trim()) {
+      agendarVerificacaoStatusDvr(300);
+    }
+  });
+
+  inputIp.addEventListener('input', () => {
+    if (inputCodigo.value.trim()) {
+      agendarVerificacaoStatusDvr(400);
     }
   });
 
@@ -717,6 +901,7 @@
       mensagem.style.color = 'var(--accent-dark)';
       mensagem.textContent = `Download adicionado com sucesso (Job #${retorno.id}). O trabalhador vai iniciar em seguida.`;
       formulario.reset();
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
       document.querySelector('#usuario').value = 'admin'; 
       document.querySelector('#porta_sdk').value = '8000';
       await carregarCatalogoEscolas();
@@ -918,12 +1103,17 @@
         textoStatus = 'Erro Leitura';
       }
 
+      const btnRocketTg = valCod
+        ? `<a class="btn-rocket-mini link-rocket-tg" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(valCod)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" title="Abrir unidade ${valCod} no Rocket">🚀 ${valCod} - ${valNome || 'Unidade'}</a>`
+        : '';
+
       card.innerHTML = `
         <summary class="card-tg-summary">
-          <div style="display:flex; align-items:center; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <span class="seta-tg">▶</span>
             <strong style="font-size:1.02rem;">${item.nome_escola || 'Escola ' + (item.codigo_escola || 'não informada')}</strong>
             <span style="color:var(--muted); font-size:.82rem;">(Cód: <strong>${item.codigo_escola || '-'}</strong>)</span>
+            ${btnRocketTg}
           </div>
           <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
             <span style="color:var(--muted); font-size:.82rem;">📹 Câm ${item.cameras || '1'} | 🕒 ${mostrarData(item.data_inicio)} até ${mostrarData(item.data_fim)}</span>
@@ -932,10 +1122,11 @@
         </summary>
 
         <div class="card-tg-body">
-          <div style="display:flex; flex-wrap:wrap; gap:16px; color:var(--muted); font-size:.85rem;">
+          <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; color:var(--muted); font-size:.85rem;">
             <span>👤 Solicitante: <strong style="color:var(--ink);">${item.solicitante || 'Telegram'}</strong></span>
             <span>📅 Recebido em: <strong style="color:var(--ink);">${mostrarData(item.recebido_em)}</strong></span>
             ${item.dvr_ip ? `<span>🌐 DVR IP: <strong style="color:var(--ink);">${item.dvr_ip}</strong></span>` : ''}
+            ${btnRocketTg}
           </div>
 
           <details class="card-tg-orig" ${openMsg}>
@@ -972,8 +1163,11 @@
           ${item.status === 'aguardando_ip' ? `
             <div class="form-acao-tg" data-solic-id="${item.id}">
               <div>
-                <label>Endereço IP da DVR</label>
-                <input type="text" class="input-ip" placeholder="Ex: 192.168.1.10" value="${valIp}">
+                <label style="display:flex; align-items:center; gap:6px;">
+                  <span>Endereço IP da DVR</span>
+                  <span class="bolinha-status verificando dot-tg-ip" style="${valIp ? 'display:inline-block;' : 'display:none;'}" data-ip="${valIp}" title="Status da DVR"></span>
+                </label>
+                <input type="text" class="input-ip" placeholder="Ex: 192.168.1.10" value="${valIp}" oninput="verificarIpCardTelegram(this)">
               </div>
               <div>
                 <label>Senha da DVR</label>
@@ -1000,6 +1194,9 @@
 
     listaTelegramEl.innerHTML = '';
     listaTelegramEl.appendChild(fragment);
+    listaTelegramEl.querySelectorAll('.input-ip').forEach(inp => {
+      if (inp.value.trim()) verificarIpCardTelegram(inp);
+    });
 
     // Restaura o foco e a seleção de texto caso o operador estivesse digitando
     if (focoInfo) {
@@ -1014,6 +1211,36 @@
         }
       }
     }
+  }
+
+  const timersIpTg = new WeakMap();
+  function verificarIpCardTelegram(inputEl) {
+    if (!inputEl) return;
+    const container = inputEl.closest('div');
+    const dot = container ? container.querySelector('.dot-tg-ip') : null;
+    if (!dot) return;
+    const ip = inputEl.value.trim();
+    if (!ip) {
+      dot.style.display = 'none';
+      return;
+    }
+    dot.style.display = 'inline-block';
+    dot.className = 'bolinha-status verificando dot-tg-ip';
+    dot.title = 'Verificando DVR...';
+    clearTimeout(timersIpTg.get(inputEl));
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/dvr/status?ip=${encodeURIComponent(ip)}`);
+        const d = await res.json();
+        const on = Boolean(d.online);
+        dot.className = `bolinha-status ${on ? 'online' : 'offline'} dot-tg-ip`;
+        dot.title = on ? `DVR ${ip} Online` : `DVR ${ip} Offline`;
+      } catch {
+        dot.className = 'bolinha-status offline dot-tg-ip';
+        dot.title = `DVR ${ip} Offline`;
+      }
+    }, 350);
+    timersIpTg.set(inputEl, t);
   }
 
   async function iniciarSolicitacao(id, botao) {
@@ -1206,14 +1433,22 @@
 
     let html = itensRender.map(item => `
       <tr>
-        <td><strong>${item.codigo}</strong></td>
+        <td>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <strong>${item.codigo}</strong>
+            <a class="btn-rocket-mini" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(item.codigo)}" target="_blank" rel="noopener noreferrer" title="Abrir unidade ${item.codigo} (${item.nome}) no Rocket">🚀</a>
+          </div>
+        </td>
         <td>${item.nome}</td>
         <td><small style="color:var(--muted);">${item.cidade || '-'}</small></td>
         <td>
-          ${item.dvr_ip 
-            ? `<button type="button" class="btn-acao-ip badge-ip-ok" data-codigo="${item.codigo}" data-nome="${item.nome}" data-ip="${item.dvr_ip}" title="Clique para editar este IP"><span>${item.dvr_ip}</span> <span style="font-size:.7rem; opacity:.75;">✏️</span></button>` 
-            : `<button type="button" class="btn-acao-ip badge-ip-sem" data-codigo="${item.codigo}" data-nome="${item.nome}" data-ip="" title="Clique para cadastrar o IP desta unidade"><span>+ Sem IP</span></button>`
-          }
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${item.dvr_ip 
+              ? `<span class="bolinha-status verificando dot-unidade-ip" data-ip="${item.dvr_ip}" data-codigo="${item.codigo}" title="Verificando status da DVR..."></span>
+                 <button type="button" class="btn-acao-ip badge-ip-ok" data-codigo="${item.codigo}" data-nome="${item.nome}" data-ip="${item.dvr_ip}" title="Clique para editar este IP"><span>${item.dvr_ip}</span> <span style="font-size:.7rem; opacity:.75;">✏️</span></button>` 
+              : `<button type="button" class="btn-acao-ip badge-ip-sem" data-codigo="${item.codigo}" data-nome="${item.nome}" data-ip="" title="Clique para cadastrar o IP desta unidade"><span>+ Sem IP</span></button>`
+            }
+          </div>
         </td>
         <td style="text-align:center;">
           <strong style="${item.gravacoes > 0 ? 'color:var(--accent-dark);' : 'color:var(--muted);'}">${item.gravacoes}</strong>
@@ -1226,6 +1461,34 @@
     }
 
     tbody.innerHTML = html;
+    verificarBolinhasUnidadesNaTabela();
+  }
+
+  const cacheStatusUnidades = new Map();
+  async function verificarBolinhasUnidadesNaTabela() {
+    const dots = Array.from(document.querySelectorAll('.dot-unidade-ip'));
+    for (const dot of dots.slice(0, 40)) {
+      const ip = dot.dataset.ip;
+      if (!ip) continue;
+      if (cacheStatusUnidades.has(ip)) {
+        const on = cacheStatusUnidades.get(ip);
+        dot.className = `bolinha-status ${on ? 'online' : 'offline'} dot-unidade-ip`;
+        dot.title = on ? `DVR ${ip} Online` : `DVR ${ip} Offline`;
+        continue;
+      }
+      fetch(`/api/dvr/status?ip=${encodeURIComponent(ip)}`)
+        .then(r => r.json())
+        .then(d => {
+          const on = Boolean(d.online);
+          cacheStatusUnidades.set(ip, on);
+          dot.className = `bolinha-status ${on ? 'online' : 'offline'} dot-unidade-ip`;
+          dot.title = on ? `DVR ${ip} Online` : `DVR ${ip} Offline`;
+        })
+        .catch(() => {
+          dot.className = 'bolinha-status offline dot-unidade-ip';
+          dot.title = `DVR ${ip} Offline`;
+        });
+    }
   }
 
   async function editarIpEscola(codigo, nome, ipAtual) {

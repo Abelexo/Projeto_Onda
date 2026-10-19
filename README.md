@@ -16,21 +16,28 @@ O Projeto Onda resolve o problema de ter que baixar horas de gravacoes manualmen
    - **ISAPI Web (Porta 80 HTTP):** Protocolo REST/XML via HTTP da Hikvision. Serve como contingencia universal e funciona em qualquer sistema operacional.
    - **Modo Automatico Inteligente:** O sistema testa a porta 8000 via SDK. Se autenticar com sucesso, baixa direto pelo SDK. Se a porta 8000 estiver bloqueada na rede ou a senha for diferente da web, o sistema alterna automaticamente no mesmo instante para ISAPI na porta 80, garantindo o download sem travar a fila.
 
-2. **Trabalhador em Segundo Plano (Worker Assincrono):**
-   - O Flask serve a interface web enquanto uma thread separada fica em execucao continua processando a fila de downloads.
-   - Voce pode cadastrar varios pedidos, fechar a aba do navegador ou fechar a sessao que o servidor continua baixando no terminal normalmente.
+2. **Pool de Downloads Simultaneos (Multi-Thread por DVR):**
+   - O sistema processa ate **3 pedidos de gravacao simultaneamente** em paralelo quando sao de DVRs (IPs) diferentes.
+   - Se houver dois pedidos para a **mesma DVR (mesmo IP)** ao mesmo tempo, o sistema utiliza uma trava inteligente por IP (`lock_dvr`) para enfileirar o segundo pedido sem derrubar a conexao da DVR.
+   - Reuso de sessao SDK: faz um unico login na porta 8000 por pedido e reutiliza a mesma sessao autenticada em todas as cameras solicitadas, evitando bloqueio por excesso de logins ("Illegal Login Lock").
 
-3. **Corte e Conversao com FFmpeg:**
-   - O sistema recorta os videos no segundo exato pedido e gera arquivos `.mp4` organizados automaticamente em pastas por data, codigo, escola e camera.
+3. **Alta Disponibilidade (Watchdog Auto-Restart Nativo):**
+   - Os scripts `setup_and_run.ps1` (Windows) e `setup_and_run.sh` (Linux) possuem um **Watchdog integrado**: se o processo Python cair por qualquer falha externa, oscilacao de rede ou erro inesperado do sistema operacional, o proprio script reinicia o servidor automaticamente em 5 segundos (mantendo a mesma pasta de destino de rede escolhida) e retoma os downloads exatamente do trecho onde parou.
+   - No Windows PowerShell, o script desativa automaticamente o *QuickEdit Mode* da janela para impedir que um clique acidental do mouse na tela preta congele o servidor.
 
-4. **Validacao Inteligente de Cameras:**
-   - A aplicacao le a topologia da DVR (quantidade de canais analogicos e canais IP digitais). Se um operador pedir uma camera que nao existe no aparelho (ex: camera 20 em uma DVR de 4 canais), o sistema avisa na hora que a camera e invalida, sem perder tempo tentando baixar o que nao existe.
+4. **Corte e Conversao com FFmpeg:**
+   - O sistema recorta os videos no segundo exato pedido e gera arquivos `.mp4` (H.264) organizados automaticamente em pastas por data, codigo, escola e camera.
 
-5. **Catalogo Automatico de Escolas:**
-   - O codigo da escola e obrigatorio no cadastro. Conforme novos downloads sao feitos, o banco SQLite atualiza automaticamente o vinculo de codigo, nome e IP da DVR. Ao digitar o codigo da escola no futuro, o IP preenche sozinho.
+5. **Validacao Inteligente de Cameras e Contagem Real de Pedidos:**
+   - A aplicacao le a topologia da DVR (quantidade de canais analogicos e canais IP digitais) antes de iniciar.
+   - O painel e as estatisticas contabilizam cada **pedido de gravacao concluido** (ex: um pedido de 2 horas dividido internamente em 20 partes conta como 1 gravacao concluida).
 
-6. **Player Web Continuo:**
-   - As gravacoes concluidas podem ser assistidas direto na pagina do navegador ou baixadas pelo botao de download. O player de video continua tocando sem fechar durante as atualizacoes periodicas de progresso.
+6. **Catalogo Automatico de Escolas e Integracao Telegram + IA (Gemini):**
+   - Conforme novos downloads sao feitos, o banco SQLite salva automaticamente o vinculo de codigo, nome, IP e credenciais da DVR.
+   - Integracao via Telethon (`telegram_bot.py`) com reconexao automatica infinita: le pedidos postados no grupo do Telegram, interpreta datas e cameras com Google Gemini e inicia os downloads sozinho quando a escola ja possui IP cadastrado.
+
+7. **Player Web Continuo:**
+   - As gravacoes concluidas podem ser assistidas direto na pagina do navegador ou baixadas pelo botao de download.
 
 ---
 
@@ -38,14 +45,17 @@ O Projeto Onda resolve o problema de ter que baixar horas de gravacoes manualmen
 
 ```
 projeto-onda/
-├── app.py               # Servidor Flask, API e trabalhador em segundo plano
-├── hikvision_sdk.py     # Integracao com a biblioteca nativa HCNetSDK (Windows)
-├── requirements.txt     # Dependencias Python
-├── setup_and_run.ps1    # Instalador e inicializador automatico para Windows PowerShell
-├── sdk_dlls/            # DLLs oficiais da Hikvision (HCNetSDK, OpenSSL, HCNetSDKCom)
+├── app.py                   # Servidor Flask, API REST e Pool de Trabalhadores (Workers)
+├── hikvision_sdk.py         # Integracao com a biblioteca nativa HCNetSDK (Windows porta 8000)
+├── telegram_bot.py          # Integracao Telethon + Google Gemini com auto-reconexao
+├── autenticar_telegram.py   # Script unico para login inicial da sessao do Telegram
+├── requirements.txt         # Dependencias Python
+├── setup_and_run.ps1        # Instalador + Watchdog automatico para Windows PowerShell
+├── setup_and_run.sh         # Instalador + Watchdog automatico para Linux
+├── sdk_dlls/                # DLLs oficiais da Hikvision (HCNetSDK, OpenSSL, HCNetSDKCom)
 ├── static/
-│   └── index.html       # Interface web (formulario, barra de progresso e player)
-└── README.md            # Este manual
+│   └── index.html           # Interface web (formulario, fila simultanea, estatisticas e player)
+└── README.md                # Este manual
 ```
 
 ---
@@ -75,19 +85,19 @@ A instalacao e a execucao sao feitas totalmente via terminal utilizando o script
    ```
 
 ### O que o instalador faz sozinho:
-- Verifica se o Python esta instalado.
-- Cria o ambiente virtual isolado (`.venv`).
+- Desativa o congelamento por clique (*QuickEdit Mode*) do terminal Windows.
+- Verifica se o Python esta instalado e cria o ambiente virtual isolado (`.venv`).
 - Instala todas as dependencias do `requirements.txt`.
-- Verifica o FFmpeg (se nao estiver no computador, ele baixa e descompacta o FFmpeg automaticamente).
+- Verifica o FFmpeg (se nao estiver no computador, baixa e extrai o `ffmpeg.exe` automaticamente).
 - Valida as DLLs do SDK da Hikvision na pasta `sdk_dlls/`.
-- Pergunta onde voce deseja salvar as gravacoes (pasta local ou compartilhamento de rede `\\servidor\pasta`).
-- Inicia o servidor e exibe o endereco de acesso.
+- Pergunta onde voce deseja salvar as gravacoes (pasta local ou servidor na rede `\\servidor\pasta`, lembrando sua ultima escolha como sugestao padrao).
+- Mantem o servidor monitorado em loop (**Watchdog**): se o processo fechar por qualquer imprevisto, ele sobe novamente sozinho em 5 segundos usando a mesma pasta de destino e retoma os downloads pendentes.
 
 ---
 
 ## Como Acessar a Interface
 
-Com o servidor rodando no PowerShell:
+Com o servidor rodando:
 
 - **No proprio servidor:**
   Abra o navegador e acesse: `http://localhost:5000`
@@ -99,16 +109,11 @@ Com o servidor rodando no PowerShell:
 
 ## Como Iniciar nas Proximas Vezes
 
-Apos a primeira instalacao, para iniciar o servidor novamente, basta rodar no PowerShell:
+Apos a primeira instalacao, basta rodar no PowerShell:
 
 ```powershell
 .\setup_and_run.ps1
 ```
 
-Ou, se preferir rodar direto pelo Python do ambiente virtual:
+Para interromper o servidor a qualquer momento, pressione `Ctrl + C` no terminal.
 
-```powershell
-.\.venv\Scripts\python.exe app.py
-```
-
-Para interromper o servidor a qualquer momento, pressione `Ctrl + C` no PowerShell.

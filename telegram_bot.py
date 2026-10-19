@@ -95,8 +95,9 @@ CAMINHO_SESSAO = os.path.join(PASTA_RAIZ, "onda_user")
 
 
 def conectar_db():
-    conn = sqlite3.connect(BANCO_PATH, check_same_thread=False)
+    conn = sqlite3.connect(BANCO_PATH, check_same_thread=False, timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 
@@ -336,7 +337,10 @@ def processar_texto_recebido(msg_id, texto, solicitante):
 
 
 def loop_telethon():
-    """Roda o loop de eventos assincrono do Telethon em segundo plano."""
+    """
+    Roda o loop de eventos assíncrono do Telethon em segundo plano com
+    reconexão automática infinita caso a internet oscile após dias rodando.
+    """
     global bot_rodando, ultimo_erro_bot, info_usuario_conectado, cliente_telethon
 
     arquivo_session_real = f"{CAMINHO_SESSAO}.session"
@@ -360,64 +364,84 @@ def loop_telethon():
 
     async def main_coro():
         global bot_rodando, ultimo_erro_bot, info_usuario_conectado, cliente_telethon
-        print("[TelegramBot] Conectando ao Telegram via Telethon...")
-        client = TelegramClient(CAMINHO_SESSAO, api_id_int, API_HASH)
-        cliente_telethon = client
 
-        await client.connect()
-        if not await client.is_user_authorized():
-            ultimo_erro_bot = "Conta nao autorizada. Execute 'python autenticar_telegram.py' para autenticar."
-            print(f"[TelegramBot] ❌ {ultimo_erro_bot}")
-            bot_rodando = False
-            return
-
-        me = await client.get_me()
-        info_usuario_conectado = {
-            "id": me.id,
-            "nome": f"{me.first_name} {me.last_name or ''}".strip(),
-            "username": me.username or ""
-        }
-        bot_rodando = True
-        ultimo_erro_bot = None
-        print(f"[TelegramBot] ✅ Conectado como {info_usuario_conectado['nome']} (@{info_usuario_conectado['username']})!")
-        print(f"[TelegramBot] 🎧 Escutando mensagens do grupo {TELEGRAM_GROUP_ID} (incluindo postagens de outros bots)...")
-
-        # Configura o chat alvo (grupo)
-        alvo_chat = None
-        if TELEGRAM_GROUP_ID:
+        while True:
+            client = None
             try:
-                alvo_chat = int(TELEGRAM_GROUP_ID)
-            except ValueError:
-                alvo_chat = TELEGRAM_GROUP_ID
+                print("[TelegramBot] Conectando ao Telegram via Telethon...")
+                client = TelegramClient(
+                    CAMINHO_SESSAO,
+                    api_id_int,
+                    API_HASH,
+                     auto_reconnect=True,
+                    connection_retries=None,
+                    retry_delay=5,
+                )
+                cliente_telethon = client
 
-        @client.on(events.NewMessage(chats=alvo_chat if alvo_chat else None))
-        async def manipulador_mensagem(event):
-            try:
-                msg = event.message
-                texto = msg.message or ""
-                if not texto:
+                await client.connect()
+                if not await client.is_user_authorized():
+                    ultimo_erro_bot = "Conta nao autorizada. Execute 'python autenticar_telegram.py' para autenticar."
+                    print(f"[TelegramBot] ❌ {ultimo_erro_bot}")
+                    bot_rodando = False
                     return
 
-                sender = await event.get_sender()
-                solic_nome = getattr(sender, "first_name", "") or getattr(sender, "title", "") or "Usuario"
-                if getattr(sender, "username", None):
-                    solic_nome = f"@{sender.username}"
-                if getattr(sender, "bot", False):
-                    solic_nome += " [Bot]"
+                me = await client.get_me()
+                info_usuario_conectado = {
+                    "id": me.id,
+                    "nome": f"{me.first_name} {me.last_name or ''}".strip(),
+                    "username": me.username or ""
+                }
+                bot_rodando = True
+                ultimo_erro_bot = None
+                print(f"[TelegramBot] ✅ Conectado como {info_usuario_conectado['nome']} (@{info_usuario_conectado['username']})!")
+                print(f"[TelegramBot] 🎧 Escutando mensagens do grupo {TELEGRAM_GROUP_ID} (incluindo postagens de outros bots)...")
 
-                # Executa o processamento
-                processar_texto_recebido(msg.id, texto, solic_nome)
+                alvo_chat = None
+                if TELEGRAM_GROUP_ID:
+                    try:
+                        alvo_chat = int(TELEGRAM_GROUP_ID)
+                    except ValueError:
+                        alvo_chat = TELEGRAM_GROUP_ID
+
+                @client.on(events.NewMessage(chats=alvo_chat if alvo_chat else None))
+                async def manipulador_mensagem(event):
+                    try:
+                        msg = event.message
+                        texto = msg.message or ""
+                        if not texto:
+                            return
+
+                        sender = await event.get_sender()
+                        solic_nome = getattr(sender, "first_name", "") or getattr(sender, "title", "") or "Usuario"
+                        if getattr(sender, "username", None):
+                            solic_nome = f"@{sender.username}"
+                        if getattr(sender, "bot", False):
+                            solic_nome += " [Bot]"
+
+                        processar_texto_recebido(msg.id, texto, solic_nome)
+                    except Exception as e:
+                        print(f"[TelegramBot] Erro ao manipular nova mensagem: {e}")
+
+                await client.run_until_disconnected()
+                print("[TelegramBot] ⚠️ Conexao encerrada pelo Telegram. Reconectando em 10 segundos...")
             except Exception as e:
-                print(f"[TelegramBot] Erro ao manipular nova mensagem: {e}")
-
-        # Mantem o cliente rodando
-        await client.run_until_disconnected()
+                ultimo_erro_bot = str(e)
+                bot_rodando = False
+                print(f"[TelegramBot] ⚠️ Queda/Excecao no Telethon ({e}). Reconectando em 15 segundos...")
+            finally:
+                if client is not None:
+                    try:
+                        await client.disconnect()
+                    except Exception:
+                        pass
+            await asyncio.sleep(15)
 
     try:
         loop.run_until_complete(main_coro())
     except Exception as e:
         ultimo_erro_bot = str(e)
-        print(f"[TelegramBot] Excecao no loop Telethon: {e}")
+        print(f"[TelegramBot] Excecao fatal no loop Telethon: {e}")
     finally:
         bot_rodando = False
 

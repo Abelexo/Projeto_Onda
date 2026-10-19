@@ -63,8 +63,17 @@ _ffmpeg_tmp/
 
 # Documentacao interna e explicativa
 EXPLICACAO_ATUALIZACAO_TELEGRAM.txt
+modificações/
+modificacoes/
+
+# Integracao interna com o Rocket (exclusiva local - nao enviar ao GitHub)
+rocket_integracao/
+
+# Preferencia local de destino do Watchdog
+.destino_gravacoes
 
 #dados locais
 data_all_sheets.json
 escolas.json
+
 

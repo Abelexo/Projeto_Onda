@@ -54,20 +54,28 @@ else
     echo "AVISO: sdk_dlls/libhcnetsdk.so nao encontrado; sera usado ISAPI porta 80."
 fi
 
-if [[ -n "${DVR_APP_DESTINO:-}" ]]; then
-    DESTINO="$DVR_APP_DESTINO"
-else
-    DEFAULT_DEST="$PROJECT_ROOT/gravacoes"
-    if [[ -t 0 ]]; then
-        read -r -p "Pasta de destino [$DEFAULT_DEST]: " DESTINO_INPUT
-        DESTINO="${DESTINO_INPUT:-$DEFAULT_DEST}"
-    else
-        DESTINO="$DEFAULT_DEST"
+SAVED_DEST_FILE="$PROJECT_ROOT/.destino_gravacoes"
+DEFAULT_DEST="$PROJECT_ROOT/gravacoes"
+if [[ -f "$SAVED_DEST_FILE" ]]; then
+    SAVED_VAL="$(cat "$SAVED_DEST_FILE" | tr -d '\r\n')"
+    if [[ -n "$SAVED_VAL" ]]; then
+        DEFAULT_DEST="$SAVED_VAL"
     fi
 fi
+
+if [[ -n "${DVR_APP_DESTINO:-}" ]]; then
+    DESTINO="$DVR_APP_DESTINO"
+elif [[ "${1:-}" == "--auto" ]] || [[ ! -t 0 ]]; then
+    DESTINO="$DEFAULT_DEST"
+else
+    read -r -p "Pasta de destino [$DEFAULT_DEST]: " DESTINO_INPUT
+    DESTINO="${DESTINO_INPUT:-$DEFAULT_DEST}"
+fi
 mkdir -p "$DESTINO"
+echo "$DESTINO" > "$SAVED_DEST_FILE"
 export DVR_APP_DESTINO="$DESTINO"
 export DVR_APP_BANCO="$PROJECT_ROOT/dvr_app.db"
+export PYTHONUNBUFFERED="1"
 
 if command -v ss >/dev/null 2>&1 && ss -ltn | awk '$4 ~ /:5000$/ { found=1 } END { exit !found }'; then
     echo "A porta 5000 ja esta ocupada. O servidor provavelmente ja esta rodando."
@@ -79,6 +87,23 @@ IP_LOCAL="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo "Servidor: http://localhost:5000"
 [[ -n "$IP_LOCAL" ]] && echo "Acesso pela rede: http://$IP_LOCAL:5000"
 echo "Destino: $DESTINO"
-echo "Iniciando app.py. Use Ctrl+C para parar."
+echo "Watchdog de Alta Disponibilidade ATIVO: Se o servidor cair por qualquer motivo, sera reiniciado automaticamente em 5s."
+echo "Iniciando app.py. Use Ctrl+C para parar definitivamente."
 
-exec "$VENV_PYTHON" "$PROJECT_ROOT/app.py"
+WATCHDOG_LOG="$PROJECT_ROOT/servidor_watchdog.log"
+trap 'echo "[$(date "+%Y-%m-%d %H:%M:%S")] Servidor encerrado pelo usuario (SIGINT/SIGTERM)." >> "$WATCHDOG_LOG"; echo "Servidor encerrado."; exit 0' SIGINT SIGTERM
+
+set +e
+while true; do
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Iniciando servidor app.py..." >> "$WATCHDOG_LOG"
+    "$VENV_PYTHON" "$PROJECT_ROOT/app.py"
+    EXIT_CODE=$?
+    if [[ $EXIT_CODE -eq 0 ]] || [[ $EXIT_CODE -eq 130 ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Servidor finalizado normalmente (codigo $EXIT_CODE)." >> "$WATCHDOG_LOG"
+        break
+    fi
+    MSG="[$(date '+%Y-%m-%d %H:%M:%S')] ALERTA: app.py fechou inesperadamente (codigo $EXIT_CODE). Reiniciando em 5 segundos..."
+    echo "$MSG" | tee -a "$WATCHDOG_LOG"
+    sleep 5
+done
+
