@@ -258,6 +258,7 @@ def preparar_banco():
             ("escolas", "dvr_senha", "TEXT DEFAULT ''"),
             ("escolas", "dvr_modelo", "TEXT DEFAULT ''"),
             ("escolas", "dvr_canais", "TEXT DEFAULT ''"),
+            ("escolas", "dvrs_json", "TEXT DEFAULT '[]'"),
         ):
             try:
                 banco.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
@@ -1424,20 +1425,30 @@ def criar_job():
     return jsonify({"id": job_id, "status": "novo"}), 201
 
 
+def _parsear_dvrs_json(valor):
+    if not valor:
+        return []
+    try:
+        dados = json.loads(valor)
+        return dados if isinstance(dados, list) else []
+    except Exception:
+        return []
+
+
 @app.route("/api/escolas", methods=["GET"])
 def buscar_escolas():
     termo = request.args.get("q", "").strip()
     with banco_lock:
         if termo:
             linhas = banco.execute(
-                "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais FROM escolas "
+                "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais, dvrs_json FROM escolas "
                 "WHERE codigo LIKE ? OR nome LIKE ? OR cidade LIKE ? "
                 "ORDER BY nome ASC LIMIT 50",
                 (f"%{termo}%", f"%{termo}%", f"%{termo}%")
             ).fetchall()
         else:
             linhas = banco.execute(
-                "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais FROM escolas ORDER BY nome ASC"
+                "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais, dvrs_json FROM escolas ORDER BY nome ASC"
             ).fetchall()
     return jsonify([
         {
@@ -1449,6 +1460,7 @@ def buscar_escolas():
             "dvr_senha": l[5] or "",
             "dvr_modelo": l[6] or "",
             "dvr_canais": l[7] or "",
+            "dvrs": _parsear_dvrs_json(l[8]),
         }
         for l in linhas
     ])
@@ -1458,7 +1470,7 @@ def buscar_escolas():
 def obter_escola(codigo):
     with banco_lock:
         linha = banco.execute(
-            "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais FROM escolas WHERE codigo=?",
+            "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais, dvrs_json FROM escolas WHERE codigo=?",
             (str(codigo).strip(),)
         ).fetchone()
     if not linha:
@@ -1472,6 +1484,7 @@ def obter_escola(codigo):
         "dvr_senha": linha[5] or "",
         "dvr_modelo": linha[6] or "",
         "dvr_canais": linha[7] or "",
+        "dvrs": _parsear_dvrs_json(linha[8]),
     })
 
 

@@ -39,6 +39,18 @@
     .chip-canal { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:24px; padding:0 7px; border-radius:12px; background:#dcfce7; color:#166534; border:1px solid #86efac; font:700 .75rem/1 system-ui,sans-serif; cursor:pointer; user-select:none; transition:all .15s ease; }
     .chip-canal:hover { background:#bbf7d0; transform:translateY(-1px); }
     .chip-canal.selecionado { background:var(--accent); color:#fff; border-color:var(--accent-dark); }
+    .btn-seta-multi-dvr { width:auto !important; min-height:44px; margin:0 !important; padding:0 12px; background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; border-radius:4px; font:700 .8rem/1 system-ui,sans-serif; display:inline-flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; transition:all .15s ease; }
+    .btn-seta-multi-dvr:hover { background:#dbeafe; border-color:#60a5fa; color:#1e40af; }
+    .painel-tabela-dvrs { margin-top:6px; background:#fff; border:1px solid #93c5fd; border-radius:6px; overflow:hidden; box-shadow:0 4px 12px rgba(30,64,175,.08); font-family:system-ui,-apple-system,sans-serif; }
+    .tabela-multi-dvr { width:100%; border-collapse:collapse; font-size:.8rem; }
+    .tabela-multi-dvr th { background:#eff6ff; color:#1e3a8a; text-align:left; padding:7px 10px; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid #bfdbfe; }
+    .tabela-multi-dvr td { padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+    .tabela-multi-dvr tr:last-child td { border-bottom:none; }
+    .tabela-multi-dvr tbody tr { cursor:pointer; transition:background .12s ease; }
+    .tabela-multi-dvr tbody tr:hover { background:#f8fafc; }
+    .tabela-multi-dvr tbody tr.dvr-ativa { background:#ecfdf5; }
+    .btn-selecionar-dvr { width:auto !important; min-height:26px; margin:0 !important; padding:3px 9px; font-size:.73rem; border-radius:12px; background:var(--accent); color:#fff; border:none; cursor:pointer; font-weight:700; }
+    .btn-selecionar-dvr.ativa { background:#166534; }
     .layout { display:grid; grid-template-columns:minmax(320px, .9fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
     section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; min-width:0; }
     h2 { margin:0 0 18px; font-size:1.35rem; }
@@ -209,7 +221,26 @@
         <datalist id="lista_nomes"></datalist>
 
         <label for="dvr_ip">Endereco da DVR</label>
-        <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10">
+        <div style="display:flex; gap:6px; align-items:stretch;">
+          <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10" style="flex:1; min-width:0;">
+          <button type="button" id="btn-seta-multi-dvr" class="btn-seta-multi-dvr" style="display:none;" title="Esta unidade possui mais de uma DVR. Clique para abrir/fechar a tabela de IPs de DVR.">
+            <span id="icone-seta-multi-dvr">▼</span>
+            <span id="texto-seta-multi-dvr">2 DVRs</span>
+          </button>
+        </div>
+        <div id="painel-tabela-dvrs" class="painel-tabela-dvrs" style="display:none;">
+          <table class="tabela-multi-dvr">
+            <thead>
+              <tr>
+                <th>Modelo DVR</th>
+                <th>IP da DVR</th>
+                <th>Canais</th>
+                <th style="text-align:right;">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="corpo-tabela-multi-dvr"></tbody>
+          </table>
+        </div>
         <div class="row">
           <div><label for="porta_sdk">Porta SDK</label><input id="porta_sdk" name="porta_sdk" type="number" placeholder="8000" value="8000"></div>
         </div>
@@ -700,10 +731,92 @@
   const inputCanaisDvr = document.querySelector('#dvr_canais');
   const containerChipsCanais = document.querySelector('#chips-canais-ativos');
   const statusSyncRocket = document.querySelector('#status-sync-rocket');
+  const btnSetaMultiDvr = document.querySelector('#btn-seta-multi-dvr');
+  const iconeSetaMultiDvr = document.querySelector('#icone-seta-multi-dvr');
+  const textoSetaMultiDvr = document.querySelector('#texto-seta-multi-dvr');
+  const painelTabelaDvrs = document.querySelector('#painel-tabela-dvrs');
+  const corpoTabelaMultiDvr = document.querySelector('#corpo-tabela-multi-dvr');
   const listaCodigos = document.querySelector('#lista_codigos');
   const listaNomes = document.querySelector('#lista_nomes');
   let mapaEscolasPorCodigo = new Map();
   let mapaEscolasPorNome = new Map();
+  let dvrsUnidadeAtual = [];
+
+  function renderizarMultiDvrs(listaDvrs) {
+    dvrsUnidadeAtual = Array.isArray(listaDvrs)
+      ? listaDvrs.filter(d => d && d.dvr_ip)
+      : [];
+    if (!btnSetaMultiDvr || !painelTabelaDvrs || !corpoTabelaMultiDvr) return;
+
+    if (dvrsUnidadeAtual.length <= 1) {
+      btnSetaMultiDvr.style.display = 'none';
+      painelTabelaDvrs.style.display = 'none';
+      corpoTabelaMultiDvr.innerHTML = '';
+      if (iconeSetaMultiDvr) iconeSetaMultiDvr.textContent = '▼';
+      return;
+    }
+
+    btnSetaMultiDvr.style.display = 'inline-flex';
+    if (textoSetaMultiDvr) {
+      textoSetaMultiDvr.textContent = `${dvrsUnidadeAtual.length} DVRs`;
+    }
+
+    const ipAtual = (inputIp?.value || '').trim();
+    corpoTabelaMultiDvr.innerHTML = dvrsUnidadeAtual.map((dvr, idx) => {
+      const canaisTxt = Array.isArray(dvr.canais_ativos)
+        ? dvr.canais_ativos.join(', ')
+        : (dvr.canais_ativos || '-');
+      const modeloTxt = dvr.modelo || dvr.nome_dvr || `DVR ${idx + 1}`;
+      const codExtra = (dvr.codigo_sistema && dvr.codigo_sistema !== inputCodigo?.value.trim())
+        ? ` <small style="color:var(--muted);">(${dvr.codigo_sistema})</small>`
+        : '';
+      const ativa = dvr.dvr_ip === ipAtual;
+      return `
+        <tr class="${ativa ? 'dvr-ativa' : ''}" data-dvr-index="${idx}">
+          <td><strong>${modeloTxt}</strong>${codExtra}</td>
+          <td><code>${dvr.dvr_ip}</code></td>
+          <td><small>${canaisTxt}</small></td>
+          <td style="text-align:right;">
+            <button type="button" class="btn-selecionar-dvr ${ativa ? 'ativa' : ''}" data-dvr-index="${idx}">
+              ${ativa ? '✓ Selecionada' : 'Selecionar'}
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function selecionarDvrDaUnidade(idx) {
+    const dvr = dvrsUnidadeAtual[idx];
+    if (!dvr) return;
+    if (dvr.dvr_ip && inputIp) inputIp.value = dvr.dvr_ip;
+    if (dvr.usuario && inputUsuario) inputUsuario.value = dvr.usuario;
+    if (dvr.senha && inputSenha) inputSenha.value = dvr.senha;
+    if (inputModeloDvr) inputModeloDvr.value = dvr.modelo || dvr.nome_dvr || '';
+    const canaisStr = Array.isArray(dvr.canais_ativos)
+      ? dvr.canais_ativos.join(', ')
+      : (dvr.canais_ativos || '');
+    if (inputCanaisDvr) inputCanaisDvr.value = canaisStr;
+    renderizarChipsCanais(dvr.canais_ativos || []);
+    renderizarMultiDvrs(dvrsUnidadeAtual);
+    agendarVerificacaoStatusDvr(50);
+  }
+
+  btnSetaMultiDvr?.addEventListener('click', () => {
+    if (!painelTabelaDvrs) return;
+    const aberto = painelTabelaDvrs.style.display !== 'none';
+    painelTabelaDvrs.style.display = aberto ? 'none' : 'block';
+    if (iconeSetaMultiDvr) iconeSetaMultiDvr.textContent = aberto ? '▼' : '▲';
+  });
+
+  corpoTabelaMultiDvr?.addEventListener('click', ev => {
+    const tr = ev.target.closest('tr[data-dvr-index]');
+    if (!tr) return;
+    const idx = Number(tr.dataset.dvrIndex);
+    if (!Number.isNaN(idx)) {
+      selecionarDvrDaUnidade(idx);
+    }
+  });
 
   function renderizarChipsCanais(canaisTextoOuLista) {
     if (!containerChipsCanais) return;
@@ -902,6 +1015,7 @@
       mensagem.style.color = 'var(--muted)';
       mensagem.textContent = `Escola ${item.nome} selecionada. Buscando dados completos no Rocket...`;
     }
+    renderizarMultiDvrs(item.dvrs || []);
     agendarVerificacaoStatusDvr(80);
   }
 
@@ -941,10 +1055,14 @@
         : (dados.canais_ativos || '');
       if (inputCanaisDvr) inputCanaisDvr.value = canaisStr;
       renderizarChipsCanais(dados.canais_ativos || []);
+      renderizarMultiDvrs(dados.dvrs || []);
 
       if (statusSyncRocket) {
         statusSyncRocket.style.color = 'var(--accent-dark)';
-        statusSyncRocket.textContent = '✅ Sincronizado e salvo no banco!';
+        const qtdDvrs = Array.isArray(dados.dvrs) ? dados.dvrs.length : 1;
+        statusSyncRocket.textContent = qtdDvrs > 1
+          ? `✅ Sincronizado (${qtdDvrs} DVRs na unidade)`
+          : '✅ Sincronizado e salvo no banco!';
       }
       mensagem.style.color = 'var(--accent-dark)';
       mensagem.textContent = `Dados puxados do Rocket 🚀 e salvos no banco: ${dados.nome || cod} | IP: ${dados.dvr_ip || '-'} | Modelo: ${dados.modelo_dvr || '-'}`;
@@ -961,7 +1079,7 @@
 
   function escolaPrecisaComplementarNoRocket(item) {
     if (!item) return true;
-    return !item.dvr_ip || !item.dvr_senha || !item.dvr_modelo || !item.dvr_canais;
+    return !item.dvr_ip || !item.dvr_senha || !item.dvr_modelo || !item.dvr_canais || !Array.isArray(item.dvrs) || item.dvrs.length === 0;
   }
 
   inputCodigo.addEventListener('input', () => {
@@ -970,6 +1088,7 @@
       if (inputModeloDvr) inputModeloDvr.value = '';
       if (inputCanaisDvr) inputCanaisDvr.value = '';
       renderizarChipsCanais([]);
+      renderizarMultiDvrs([]);
       if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
       return;
     }
