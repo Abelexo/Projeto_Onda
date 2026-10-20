@@ -3,22 +3,63 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Central de gravacoes</title>
+  <title>Central de Gravações</title>
   <style>
     :root { color-scheme: light; --ink:#17211b; --muted:#66736a; --paper:#f4f1e8; --panel:#fffdf8; --line:#d9ded5; --accent:#176b52; --accent-dark:#0d4b3a; --warn:#9a5b12; --danger:#a43f32; }
     * { box-sizing:border-box; }
     body { margin:0; background:linear-gradient(135deg,#e7eee6 0%,var(--paper) 54%,#e9e4d8 100%); color:var(--ink); font:16px/1.45 Georgia, serif; min-height:100vh; }
-    main { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:42px 0 64px; }
-    header { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:30px; }
-    h1 { font-size:clamp(2rem,5vw,4.2rem); line-height:.95; margin:0; letter-spacing:0; max-width:600px; }
-    header p { max-width:310px; margin:0; color:var(--muted); }
-    .layout { display:grid; grid-template-columns:minmax(280px, .8fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
-    section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; }
+    main { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:34px 0 64px; }
+    header { display:flex; justify-content:space-between; gap:24px; align-items:center; margin-bottom:26px; padding-bottom:18px; border-bottom:1px solid rgba(23,33,27,.09); }
+    .header-brand { display:flex; align-items:center; gap:16px; }
+    .header-logo { width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); color:#fff; display:flex; align-items:center; justify-content:center; font-size:1.55rem; box-shadow:0 6px 16px rgba(23,107,82,.22); flex-shrink:0; }
+    .header-tag { display:inline-block; font:700 .68rem/1 system-ui,-apple-system,sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-dark); background:#dceee5; padding:4px 9px; border-radius:20px; margin-bottom:5px; }
+    h1 { font:800 clamp(1.65rem, 3vw, 2.25rem)/1.12 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; margin:0; letter-spacing:-.02em; color:var(--ink); }
+    header p { max-width:520px; margin:5px 0 0; color:var(--muted); font:400 .92rem/1.4 system-ui,-apple-system,sans-serif; }
+    .card-contador-numero { font:800 1.45rem/1.1 system-ui,-apple-system,sans-serif; color:var(--accent-dark); }
+
+    /* Botão do Rocket + Indicador Online/Offline da Unidade */
+    .painel-unidade-rocket { display:none; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding:9px 12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; font-family:system-ui,-apple-system,sans-serif; flex-wrap:wrap; }
+    .btn-rocket-unidade { display:inline-flex; align-items:center; gap:7px; padding:6px 12px; background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%); color:#fff !important; text-decoration:none; border-radius:5px; font:700 .82rem/1.2 system-ui,sans-serif; box-shadow:0 2px 6px rgba(37,99,235,.22); transition:all .15s ease; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .btn-rocket-unidade:hover { background:linear-gradient(135deg,#1d4ed8 0%,#1e40af 100%); transform:translateY(-1px); }
+    .btn-rocket-mini { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:#eff6ff; color:#1d4ed8 !important; border:1px solid #bfdbfe; border-radius:12px; font:700 .74rem/1.1 system-ui,sans-serif; text-decoration:none; transition:all .15s ease; white-space:nowrap; }
+    .btn-rocket-mini:hover { background:#dbeafe; border-color:#93c5fd; transform:translateY(-1px); }
+    .badge-status-dvr { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px; font:700 .76rem/1 system-ui,sans-serif; white-space:nowrap; border:1px solid transparent; }
+    .badge-status-dvr.online { background:#dcfce7; color:#166534; border-color:#86efac; }
+    .badge-status-dvr.offline { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+    .badge-status-dvr.verificando { background:#f1f5f9; color:#475569; border-color:#cbd5e1; }
+    .bolinha-status { display:inline-block; width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .bolinha-status.online { background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.22); }
+    .bolinha-status.offline { background:#dc2626; box-shadow:0 0 0 3px rgba(220,38,38,.2); }
+    .bolinha-status.verificando { background:#94a3b8; animation:pulse 1.2s infinite; }
+    .aba-info-dvr { margin-top:12px; padding:11px 13px; background:#f4fbf7; border:1px solid #cce8dc; border-radius:6px; font-family:system-ui,-apple-system,sans-serif; }
+    .aba-info-dvr-titulo { display:flex; justify-content:space-between; align-items:center; font:700 .73rem/1.2 system-ui,sans-serif; text-transform:uppercase; letter-spacing:.05em; color:var(--accent-dark); margin-bottom:8px; }
+    .aba-info-dvr .row label { margin:0 0 4px; font-size:.71rem; }
+    .aba-info-dvr input { min-height:38px; padding:7px 10px; font-size:.88rem; background:#fff; }
+    .chips-canais-ativos { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+    .chip-canal { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:24px; padding:0 7px; border-radius:12px; background:#dcfce7; color:#166534; border:1px solid #86efac; font:700 .75rem/1 system-ui,sans-serif; cursor:pointer; user-select:none; transition:all .15s ease; }
+    .chip-canal:hover { background:#bbf7d0; transform:translateY(-1px); }
+    .chip-canal.selecionado { background:var(--accent); color:#fff; border-color:var(--accent-dark); }
+    .btn-seta-multi-dvr { width:auto !important; min-height:44px; margin:0 !important; padding:0 12px; background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; border-radius:4px; font:700 .8rem/1 system-ui,sans-serif; display:inline-flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; transition:all .15s ease; }
+    .btn-seta-multi-dvr:hover { background:#dbeafe; border-color:#60a5fa; color:#1e40af; }
+    .painel-tabela-dvrs { margin-top:6px; background:#fff; border:1px solid #93c5fd; border-radius:6px; overflow:hidden; box-shadow:0 4px 12px rgba(30,64,175,.08); font-family:system-ui,-apple-system,sans-serif; }
+    .tabela-multi-dvr { width:100%; border-collapse:collapse; font-size:.8rem; }
+    .tabela-multi-dvr th { background:#eff6ff; color:#1e3a8a; text-align:left; padding:7px 10px; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid #bfdbfe; }
+    .tabela-multi-dvr td { padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+    .tabela-multi-dvr tr:last-child td { border-bottom:none; }
+    .tabela-multi-dvr tbody tr { cursor:pointer; transition:background .12s ease; }
+    .tabela-multi-dvr tbody tr:hover { background:#f8fafc; }
+    .tabela-multi-dvr tbody tr.dvr-ativa { background:#ecfdf5; }
+    .btn-selecionar-dvr { width:auto !important; min-height:26px; margin:0 !important; padding:3px 9px; font-size:.73rem; border-radius:12px; background:var(--accent); color:#fff; border:none; cursor:pointer; font-weight:700; }
+    .btn-selecionar-dvr.ativa { background:#166534; }
+    .layout { display:grid; grid-template-columns:minmax(320px, .9fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
+    section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; min-width:0; }
     h2 { margin:0 0 18px; font-size:1.35rem; }
     label { display:block; color:var(--muted); font:700 .78rem/1.2 system-ui,sans-serif; letter-spacing:.04em; text-transform:uppercase; margin:14px 0 6px; }
-    input, button { width:100%; min-height:44px; border:1px solid #bec9bf; padding:10px 12px; font:16px system-ui,sans-serif; border-radius:4px; }
+    input, button { width:100%; min-height:44px; border:1px solid #bec9bf; padding:10px 12px; font:16px system-ui,sans-serif; border-radius:4px; box-sizing:border-box; }
     input:focus { outline:2px solid #a8d3c0; border-color:var(--accent); }
-    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .row { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; }
+    .row > div { min-width:0; }
+    input[type="datetime-local"] { width:100%; box-sizing:border-box; font-size:.84rem; padding:8px 6px; min-height:42px; }
     button { margin-top:20px; border-color:var(--accent); background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
     button:hover { background:var(--accent-dark); }
     button:disabled { opacity:.6; cursor:wait; }
@@ -34,7 +75,7 @@
     .status[data-status="convertendo"] { color:#245b78; background:#d9edf7; }
     .status[data-status="cancelado"] { color:#5f6368; background:#e5e7e9; }
     .status[data-status="sem_gravacoes"] { color:#6b5a26; background:#f5edc8; }
-    .job-time { display:block; overflow-wrap:anywhere; }
+    .job-time { display:block; overflow-wrap:anywhere; word-break:break-word; max-width:100%; margin:3px 0; }
     .progress-label { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; margin-top:12px; color:var(--muted); font:700 .75rem system-ui,sans-serif; }
     .progress-label span { min-width:0; overflow-wrap:anywhere; }
     progress { width:100%; height:10px; accent-color:var(--accent); }
@@ -54,15 +95,107 @@
     .btn-filtro { width:auto; min-height:30px; padding:4px 10px; border:1px solid #bec9bf; background:#fff; color:var(--muted); font:600 .78rem system-ui,sans-serif; border-radius:15px; cursor:pointer; margin-top:0; }
     .btn-filtro.ativo { background:var(--accent); color:#fff; border-color:var(--accent); }
     .empty { color:var(--muted); margin:0; }
-    @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } }
+    
+    /* Abas de Navegacao */
+    .abas-navegacao { display:flex; gap:8px; margin-bottom:24px; border-bottom:2px solid var(--line); }
+    .btn-aba { width:auto; border:none; border-bottom:3px solid transparent; background:transparent; padding:12px 20px; font:700 .95rem system-ui,sans-serif; color:var(--muted); cursor:pointer; margin:0; border-radius:0; transition:all .2s; }
+    .btn-aba:hover { color:var(--ink); background:rgba(0,0,0,0.02); }
+    .btn-aba.ativa { color:var(--accent-dark); border-bottom-color:var(--accent); background:rgba(23,107,82,0.07); }
+    .badge-pendente { display:inline-block; background:var(--warn); color:#fff; border-radius:12px; padding:2px 7px; font-size:.75rem; font-weight:700; margin-left:6px; vertical-align:middle; }
+    .badge-pendente.tem-pendente { background:var(--danger); animation:pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity:1; } 50% { opacity:0.6; } 100% { opacity:1; } }
+
+    /* Cards e Acordeao da Aba Solicitacoes */
+    .card-tg { background:#fff; border:1px solid var(--line); border-radius:6px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.03); overflow:hidden; }
+    .card-tg-summary { padding:14px 18px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; background:#fff; list-style:none; user-select:none; }
+    .card-tg-summary::-webkit-details-marker { display:none; }
+    .card-tg-summary:hover { background:rgba(0,0,0,0.015); }
+    .card-tg[open] > .card-tg-summary { border-bottom:1px solid var(--line); background:#fafafa; }
+    .seta-tg { display:inline-block; transition:transform .2s; font-size:.72rem; color:var(--muted); margin-right:6px; }
+    .card-tg[open] .seta-tg { transform:rotate(90deg); }
+    
+    .card-tg-body { padding:18px; display:grid; gap:14px; font-family:system-ui,sans-serif; font-size:.9rem; }
+    .card-tg-orig { font-size:.84rem; color:var(--muted); background:#f9fafb; padding:8px 12px; border-radius:4px; border:1px dashed #d1d5db; }
+    .card-tg-orig summary { cursor:pointer; font-weight:600; color:var(--muted); }
+
+    .secao-alterar { border:1px dashed #d1d5db; border-radius:6px; padding:10px 14px; background:#fbfbfc; }
+    .secao-alterar summary { cursor:pointer; font-weight:700; color:var(--accent-dark); font-size:.85rem; user-select:none; }
+    .grid-alterar { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-top:10px; }
+    .grid-alterar label { margin:0 0 4px; font-size:.72rem; }
+    .grid-alterar input { min-height:36px; padding:6px 8px; font-size:.85rem; border-radius:4px; margin:0; width:100%; box-sizing:border-box; }
+
+    .form-acao-tg { display:grid; grid-template-columns:1.2fr 1fr auto auto; gap:12px; align-items:end; background:#f4fbf7; padding:14px; border-radius:6px; border:1px solid #cce8dc; }
+    @media (max-width:820px) { .form-acao-tg { grid-template-columns:1fr; } }
+    .form-acao-tg label { margin:0 0 4px; font-size:.72rem; font-weight:700; }
+    .form-acao-tg input { min-height:42px; padding:8px 12px; font-size:.9rem; margin:0; width:100%; box-sizing:border-box; border-radius:4px; }
+    .btn-baixar-tg { min-height:42px; margin:0; padding:8px 18px; font-size:.88rem; white-space:nowrap; border-radius:4px; font-weight:700; }
+    .btn-descartar-tg { min-height:42px; margin:0; padding:8px 12px; border:1px solid #d1d5db; background:#fff; color:var(--muted); border-radius:4px; cursor:pointer; white-space:nowrap; font-size:.85rem; }
+    .btn-descartar-tg:hover { border-color:var(--danger); color:var(--danger); background:#fef2f2; }
+    
+    .card-contador { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 18px; box-shadow:0 3px 12px rgba(23,33,27,.05); white-space:nowrap; user-select:none; }
+    .card-contador-icon { font-size:1.6rem; line-height:1; }
+    .card-contador-info { display:flex; flex-direction:column; }
+    .card-contador-label { font:700 .72rem/1.2 system-ui,sans-serif; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+    /* Painel de Estatísticas */
+    .grid-stats-kpi { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-bottom:20px; }
+    .card-kpi { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:0 3px 10px rgba(0,0,0,0.02); display:flex; gap:12px; align-items:center; }
+    .kpi-icon { font-size:2rem; line-height:1; }
+    .kpi-corpo { display:flex; flex-direction:column; min-width:0; }
+    .kpi-label { font:700 .72rem system-ui,sans-serif; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+    .kpi-valor { font:800 1.55rem/1.1 system-ui,sans-serif; color:var(--ink); margin:3px 0 2px; }
+    .kpi-sub { font:600 .76rem system-ui,sans-serif; color:var(--muted); }
+    .kpi-protocolos { display:flex; gap:8px; font:700 .82rem system-ui,sans-serif; margin:3px 0 2px; }
+    
+    .lista-top5 { display:grid; gap:10px; font-family:system-ui,sans-serif; }
+    .item-top5 { background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .item-top5-pos { font-size:1.3rem; font-weight:800; min-width:32px; text-align:center; }
+    .item-top5-info { flex:1; min-width:0; }
+    .item-top5-escola { font-weight:700; font-size:.92rem; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .item-top5-sub { font-size:.78rem; color:var(--muted); }
+    .item-top5-badge { font-weight:800; font-size:.9rem; color:var(--accent-dark); background:#e6f4ea; padding:4px 10px; border-radius:12px; white-space:nowrap; }
+
+    .tabela-unidades { width:100%; border-collapse:collapse; font-family:system-ui,sans-serif; font-size:.86rem; }
+    .tabela-unidades th { background:#f9fafb; text-align:left; padding:10px 12px; font-size:.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); border-bottom:1px solid var(--line); }
+    .tabela-unidades td { padding:10px 12px; border-bottom:1px solid #f0f3ee; vertical-align:middle; }
+    .btn-acao-ip { border:none; cursor:pointer; font-family:inherit; transition:all .15s ease; outline:none; text-decoration:none; }
+    .badge-ip-ok { background:#dcfce7; color:#166534; font-weight:700; font-size:.74rem; padding:3px 8px; border-radius:10px; display:inline-flex; align-items:center; gap:4px; border:1px solid #bbf7d0; }
+    .badge-ip-ok:hover { background:#bbf7d0; transform:translateY(-1px); box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+    .badge-ip-sem { background:#fef3c7; color:#92400e; font-weight:700; font-size:.74rem; padding:3px 8px; border-radius:10px; display:inline-flex; align-items:center; gap:4px; border:1px solid #fde68a; }
+    .badge-ip-sem:hover { background:#fde68a; color:#78350f; transform:translateY(-1px); box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+
+    @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } .card-contador { margin-top:14px; justify-content:center; } }
   </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>Central de gravacoes</h1>
-    <p>Cadastre um periodo. O trabalhador continua baixando mesmo quando esta pagina estiver fechada.</p>
+    <div class="header-brand">
+      <div class="header-logo" aria-hidden="true">📹</div>
+      <div>
+        <span class="header-tag">Projeto Onda • Monitoramento Escolar</span>
+        <h1>Central de Gravações</h1>
+        <p>Cadastre um período ou acompanhe pedidos em tempo real. O trabalhador baixa em segundo plano sem precisar manter a página aberta.</p>
+      </div>
+    </div>
+    <div class="card-contador" title="Total de gravações baixadas e concluídas com sucesso">
+      <div class="card-contador-icon">🎬</div>
+      <div class="card-contador-info">
+        <span class="card-contador-label">Gravações Concluídas</span>
+        <span id="contador-concluidas" class="card-contador-numero">0</span>
+      </div>
+    </div>
   </header>
+
+  <nav class="abas-navegacao">
+    <button type="button" class="btn-aba ativa" data-alvo="painel-downloads">📥 Central de Downloads</button>
+    <button type="button" class="btn-aba" data-alvo="painel-telegram">
+      Solicitações
+      <span id="badge-telegram" class="badge-pendente" style="display:none;">0</span>
+    </button>
+    <button type="button" class="btn-aba" data-alvo="painel-estatisticas">📊 Estatísticas</button>
+  </nav>
+
+  <div id="painel-downloads">
   <div class="layout">
     <section>
       <h2>Novo download</h2>
@@ -71,15 +204,66 @@
         <input id="codigo_escola" name="codigo_escola" list="lista_codigos" placeholder="Ex: 3140" required autocomplete="off">
         <datalist id="lista_codigos"></datalist>
 
+        <!-- Botão dinâmico do Rocket + Indicador Online/Offline da Unidade (só aparece ao informar o código) -->
+        <div id="painel-unidade-rocket" class="painel-unidade-rocket">
+          <a id="btn-rocket-unidade" class="btn-rocket-unidade" href="https://org.rocket.sasi.io/protected/sites?q=" target="_blank" rel="noopener noreferrer" title="Abrir informações desta unidade no Rocket">
+            <span>🚀</span>
+            <span id="texto-rocket-unidade">Unidade</span>
+          </a>
+          <span id="badge-status-dvr" class="badge-status-dvr verificando" title="Status de conexão da DVR desta unidade">
+            <span id="bolinha-status-dvr" class="bolinha-status verificando"></span>
+            <span id="texto-status-dvr">Verificando...</span>
+          </span>
+        </div>
+
         <label for="escola">Nome da escola</label>
         <input id="escola" name="escola" list="lista_nomes" placeholder="Escola central" autocomplete="off">
         <datalist id="lista_nomes"></datalist>
 
         <label for="dvr_ip">Endereco da DVR</label>
-        <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10">
+        <div style="display:flex; gap:6px; align-items:stretch;">
+          <input id="dvr_ip" name="dvr_ip" required placeholder="192.168.1.10" style="flex:1; min-width:0;">
+          <button type="button" id="btn-seta-multi-dvr" class="btn-seta-multi-dvr" style="display:none;" title="Esta unidade possui mais de uma DVR. Clique para abrir/fechar a tabela de IPs de DVR.">
+            <span id="icone-seta-multi-dvr">▼</span>
+            <span id="texto-seta-multi-dvr">2 DVRs</span>
+          </button>
+        </div>
+        <div id="painel-tabela-dvrs" class="painel-tabela-dvrs" style="display:none;">
+          <table class="tabela-multi-dvr">
+            <thead>
+              <tr>
+                <th>Modelo DVR</th>
+                <th>IP da DVR</th>
+                <th>Canais</th>
+                <th style="text-align:right;">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="corpo-tabela-multi-dvr"></tbody>
+          </table>
+        </div>
         <div class="row">
           <div><label for="porta_sdk">Porta SDK</label><input id="porta_sdk" name="porta_sdk" type="number" placeholder="8000" value="8000"></div>
         </div>
+
+        <!-- Aba/Painel de Informações da DVR (Modelo e ao lado Canais Ativos) -->
+        <div id="aba-info-dvr" class="aba-info-dvr">
+          <div class="aba-info-dvr-titulo">
+            <span>📼 Equipamento DVR (Rocket)</span>
+            <span id="status-sync-rocket" style="font-size:.68rem; font-weight:600; color:var(--muted); text-transform:none;">Preenchimento automático</span>
+          </div>
+          <div class="row">
+            <div>
+              <label for="dvr_modelo">Modelo da DVR</label>
+              <input id="dvr_modelo" name="dvr_modelo" placeholder="Ex: DHD - 2208N" readonly title="Modelo do gravador sincronizado do Rocket">
+            </div>
+            <div>
+              <label for="dvr_canais">Canais Ativos</label>
+              <input id="dvr_canais" name="dvr_canais" placeholder="Ex: 1, 2, 3, 4, 5" readonly title="Canais ativos cadastrados no Rocket">
+            </div>
+          </div>
+          <div id="chips-canais-ativos" class="chips-canais-ativos" style="display:none;" title="Clique em um canal ativo para adicionar/remover no campo Câmeras"></div>
+        </div>
+
         <div class="row">
           <div><label for="usuario">Usuario</label><input id="usuario" name="usuario" required value="admin"></div>
           <div><label for="senha">Senha</label><input id="senha" name="senha" type="password" required></div>
@@ -117,6 +301,143 @@
       <div id="jobs"><p class="empty">Carregando...</p></div>
     </section>
   </div>
+  </div> <!-- fim #painel-downloads -->
+
+  <section id="painel-telegram" style="display:none; background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin:0 0 2px;">Solicitações</h2>
+        <p id="telegram-status" style="margin:0; font-size:.88rem; color:var(--accent); font-weight:700;">● Online</p>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" id="btn-recarregar-telegram" style="width:auto; min-height:36px; padding:6px 14px; margin-top:0; background:#fff; color:var(--ink); border:1px solid #bec9bf; font-size:.85rem;">🔄 Atualizar lista</button>
+      </div>
+    </div>
+
+    <div class="filtros">
+      <button type="button" class="btn-filtro-tg ativo" data-filtro="aguardando_ip">Aguardando IP</button>
+      <button type="button" class="btn-filtro-tg" data-filtro="baixando">Baixando / Concluídos</button>
+      <button type="button" class="btn-filtro-tg" data-filtro="todos">Todas</button>
+    </div>
+
+    <div id="lista-telegram">
+      <p class="empty">Carregando solicitações...</p>
+    </div>
+  </section>
+
+  <!-- Painel de Estatísticas -->
+  <section id="painel-estatisticas" style="display:none; background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin:0 0 2px;">Estatísticas do Sistema</h2>
+        <p style="margin:0; font-size:.88rem; color:var(--muted);">Métricas operacionais, unidades monitoradas e histórico consolidado.</p>
+      </div>
+      <div>
+        <button type="button" id="btn-recarregar-stats" style="width:auto; min-height:36px; padding:6px 14px; margin-top:0; background:#fff; color:var(--ink); border:1px solid #bec9bf; font-size:.85rem; cursor:pointer;">🔄 Atualizar estatísticas</button>
+      </div>
+    </div>
+
+    <!-- Cards KPIs Principais -->
+    <div class="grid-stats-kpi">
+      <div class="card-kpi">
+        <div class="kpi-icon">🏫</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Total de Unidades</span>
+          <strong id="stat-total-unidades" class="kpi-valor">0</strong>
+          <small id="stat-sub-unidades" class="kpi-sub">Carregando...</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">🌐</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Unidades com IP</span>
+          <strong id="stat-com-ip" class="kpi-valor" style="color:var(--accent-dark);">0</strong>
+          <small id="stat-sem-ip" class="kpi-sub" style="color:var(--warn);">-- sem IP</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">⚡</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Protocolos de Download</span>
+          <div class="kpi-protocolos">
+            <span style="color:var(--accent-dark);">SDK: <strong id="stat-sdk-count">0</strong></span>
+            <span style="color:var(--muted);">ISAPI: <strong id="stat-isapi-count">0</strong></span>
+          </div>
+          <small id="stat-proto-sub" class="kpi-sub">Total: -- gravações</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">💬</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Pedidos Telegram</span>
+          <strong id="stat-telegram-total" class="kpi-valor">0</strong>
+          <small id="stat-telegram-sub" class="kpi-sub">-- automáticos</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">💾</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Volume Total Baixado</span>
+          <strong id="stat-total-volume" class="kpi-valor">0 MB</strong>
+          <small id="stat-total-concluidas" class="kpi-sub">-- gravações concluídas</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top 5 Unidades -->
+    <div style="background:#fff; border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin-bottom:20px; box-shadow:0 2px 6px rgba(0,0,0,0.02);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="margin:0; font-size:1.05rem; color:var(--ink);">🏆 Top 5 Unidades com Mais Gravações Concluídas</h3>
+        <span style="font-size:.78rem; color:var(--muted);">Ranking consolidado</span>
+      </div>
+      <div id="lista-top5-unidades" class="lista-top5">
+        <p class="empty">Carregando ranking...</p>
+      </div>
+    </div>
+
+    <!-- Tabela Retrátil Completa de Unidades -->
+    <details class="card-tg" style="margin-bottom:0;" open>
+      <summary class="card-tg-summary" style="padding:16px 20px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="seta-tg">▶</span>
+          <strong style="font-size:1.05rem;">🏫 Unidades Cadastradas</strong>
+          <span id="badge-total-escolas" style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:12px; font-size:.8rem; font-weight:700;">0</span>
+        </div>
+        <span style="font-size:.82rem; color:var(--muted);">Clique para expandir/recolher a lista completa</span>
+      </summary>
+      <div class="card-tg-body" style="padding:20px;">
+        <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="filtro-tabela-unidades" placeholder="🔍 Buscar por código, escola ou cidade..." style="max-width:360px; min-height:38px; padding:6px 12px; font-size:.88rem; border-radius:4px; margin:0;">
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="btn-filtro ativo btn-filtro-unidade" data-tipo="todas" style="margin:0;">Todas</button>
+            <button type="button" class="btn-filtro btn-filtro-unidade" data-tipo="com_ip" style="margin:0;">Com IP</button>
+            <button type="button" class="btn-filtro btn-filtro-unidade" data-tipo="sem_ip" style="margin:0;">Sem IP</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto; max-height:460px; border:1px solid var(--line); border-radius:4px;">
+          <table class="tabela-unidades">
+            <thead style="position:sticky; top:0; z-index:2;">
+              <tr>
+                <th style="width:75px;">Código</th>
+                <th>Nome da Escola</th>
+                <th>Cidade</th>
+                <th style="width:140px;">IP da DVR</th>
+                <th style="width:100px; text-align:center;">Gravações</th>
+              </tr>
+            </thead>
+            <tbody id="corpo-tabela-unidades">
+              <tr><td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">Carregando unidades...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </section>
+
   <footer style="margin-top:40px; text-align:center; padding:22px 0; border-top:1px solid var(--line); color:var(--muted); font-family:system-ui,sans-serif; font-size:.95rem;">
     <strong style="color:var(--ink);">Sempre confira os dados no ROCKET 🚀</strong>
   </footer>
@@ -139,7 +460,12 @@
   };
   const formatBytes = valor => {
     if (valor === undefined || valor === null) return '0 KB';
-    if (valor >= 1024 * 1024) return `${(valor / 1024 / 1024).toFixed(1)} MB`;
+    const mb = valor / (1024 * 1024);
+    if (mb >= 999.5) {
+      const gb = mb / 1024;
+      return `${gb >= 1 ? gb.toFixed(2) : '1.00'} GB`;
+    }
+    if (mb >= 1) return `${mb.toFixed(1)} MB`;
     return `${(valor / 1024).toFixed(0)} KB`;
   };
   const formatDuration = segundos => {
@@ -174,22 +500,72 @@
       return;
     }
 
-    // Guarda elementos de video existentes na pagina para NUNCA destrui-los durante a reproducao
-    const containersVideos = new Map();
-    jobs.querySelectorAll('details.videos[data-job-id]').forEach(det => {
-      containersVideos.set(String(det.dataset.jobId), det);
+    const emptyP = jobs.querySelector('p.empty');
+    if (emptyP) emptyP.remove();
+
+    // Mapeia artigos existentes por jobId para atualizar in-place sem reiniciar o player de vídeo
+    const artigosExistentes = new Map();
+    jobs.querySelectorAll('article.job[data-job-id]').forEach(art => {
+      artigosExistentes.set(String(art.dataset.jobId), art);
     });
 
-    const fragment = document.createDocumentFragment();
+    const idsAtuais = new Set(lista.map(j => String(j.id)));
+    artigosExistentes.forEach((art, idStr) => {
+      if (!idsAtuais.has(idStr)) {
+        art.remove();
+      }
+    });
 
-    lista.forEach(job => {
-      const article = document.createElement('article');
-      article.className = 'job';
-      article.dataset.jobId = String(job.id);
+    lista.forEach((job, idx) => {
+      const jobIdStr = String(job.id);
+      let article = artigosExistentes.get(jobIdStr);
 
-      const divConteudo = document.createElement('div');
-      divConteudo.innerHTML = `
-        <strong>${job.escola || job.dvr_ip}</strong>
+      if (!article) {
+        article = document.createElement('article');
+        article.className = 'job';
+        article.dataset.jobId = jobIdStr;
+
+        const divConteudo = document.createElement('div');
+        divConteudo.className = 'job-conteudo';
+
+        const spanStatus = document.createElement('span');
+        spanStatus.className = 'status';
+        spanStatus.dataset.status = job.status;
+        spanStatus.textContent = job.status;
+
+        article.appendChild(divConteudo);
+        article.appendChild(spanStatus);
+      }
+
+      // Garante que o artigo esteja na posição ordenada correta sem desconectar elementos do DOM
+      const filhoAtual = jobs.children[idx];
+      if (filhoAtual !== article) {
+        jobs.insertBefore(article, filhoAtual || null);
+      }
+
+      const spanStatus = article.querySelector('.status');
+      if (spanStatus) {
+        spanStatus.dataset.status = job.status;
+        spanStatus.textContent = job.status;
+      }
+
+      const divConteudo = article.querySelector('.job-conteudo') || article.firstElementChild;
+
+      const dvrOfflineNoJob = ['aguardando_conexao', 'erro'].includes(job.status);
+      const classeBolinhaJob = dvrOfflineNoJob ? 'offline' : 'online';
+      const tituloBolinhaJob = dvrOfflineNoJob
+        ? 'DVR Offline / Aguardando reconexão'
+        : 'DVR Online / Conectada';
+      const botaoRocketJob = job.codigo_escola
+        ? `<a class="btn-rocket-mini" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(job.codigo_escola)}" target="_blank" rel="noopener noreferrer" title="Abrir unidade ${job.codigo_escola} no Rocket">🚀 ${job.codigo_escola} - ${job.escola || 'Unidade'}</a>`
+        : '';
+
+      const htmlInfo = `
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:3px;">
+          <span class="bolinha-status ${classeBolinhaJob}" title="${tituloBolinhaJob}"></span>
+          <strong style="display:inline;">${job.escola || job.dvr_ip}</strong>
+          ${botaoRocketJob}
+        </div>
         <small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong>
         <span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>
         ${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
@@ -205,19 +581,38 @@
         ${job.status === 'sem_gravacoes' ? '<p class="job-error" style="color:#6b5a26">Nenhuma gravacao encontrada. Confira IP, camera, data e fuso horario da DVR.</p>' : ''}
       `;
 
-      // Se houver arquivos concluidos, preserva o video atual tocando sem reiniciar
+      let elInfo = divConteudo.querySelector('.job-info-bloco');
+      if (!elInfo) {
+        elInfo = document.createElement('div');
+        elInfo.className = 'job-info-bloco';
+        divConteudo.insertBefore(elInfo, divConteudo.firstChild);
+      }
+      elInfo.innerHTML = htmlInfo;
+
+      // Atualiza botões de ação
+      let divAcoes = divConteudo.querySelector('.job-acoes');
+      if (!divAcoes) {
+        divAcoes = document.createElement('div');
+        divAcoes.className = 'job-acoes';
+        divAcoes.style = 'display:flex; gap:8px; align-items:center; margin-top:8px;';
+        divConteudo.appendChild(divAcoes);
+      }
+      const acoesHtml = `
+        ${!['concluido', 'cancelado', 'sem_gravacoes'].includes(job.status) ? `<button class="cancelar" type="button" data-job-id="${job.id}">Cancelar download</button>` : ''}
+        ${['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(job.status) ? `<button class="excluir" type="button" data-job-id="${job.id}">Remover da lista</button>` : ''}
+      `;
+      if (divAcoes.innerHTML.trim() !== acoesHtml.trim()) {
+        divAcoes.innerHTML = acoesHtml;
+      }
+
+      // Gerencia vídeos: NUNCA recria os players de vídeo se a contagem for idêntica, preservando reprodução sem travar
       if (job.arquivos && job.arquivos.length) {
-        const jobIdStr = String(job.id);
-        const detExistente = containersVideos.get(jobIdStr);
-        if (detExistente && detExistente.querySelectorAll('video').length === job.arquivos.length) {
-          divConteudo.appendChild(detExistente);
-        } else {
-          const isOpen = detExistente ? detExistente.open : false;
-          const novoDet = document.createElement('details');
-          novoDet.className = 'videos';
-          novoDet.dataset.jobId = jobIdStr;
-          novoDet.open = isOpen;
-          novoDet.innerHTML = `
+        let detVideos = divConteudo.querySelector('details.videos');
+        if (!detVideos) {
+          detVideos = document.createElement('details');
+          detVideos.className = 'videos';
+          detVideos.dataset.jobId = jobIdStr;
+          detVideos.innerHTML = `
             <summary>Ver gravacoes (${job.arquivos.length})</summary>
             ${job.arquivos.map(arquivo => `
               <div class="video-item">
@@ -229,30 +624,33 @@
               </div>
             `).join('')}
           `;
-          divConteudo.appendChild(novoDet);
+          divConteudo.insertBefore(detVideos, divAcoes);
+        } else {
+          const sum = detVideos.querySelector('summary');
+          if (sum) sum.textContent = `Ver gravacoes (${job.arquivos.length})`;
+          const qtdAtual = detVideos.querySelectorAll('video').length;
+          if (qtdAtual !== job.arquivos.length) {
+            const isOpen = detVideos.open;
+            detVideos.innerHTML = `
+              <summary>Ver gravacoes (${job.arquivos.length})</summary>
+              ${job.arquivos.map(arquivo => `
+                <div class="video-item">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <small style="margin:0;">Camera ${arquivo.camera} - ${arquivo.nome}</small>
+                    <a href="${arquivo.url}" download="${arquivo.nome}.mp4" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:700;">⬇ Baixar video</a>
+                  </div>
+                  <video controls preload="metadata" playsinline src="${arquivo.url}"></video>
+                </div>
+              `).join('')}
+            `;
+            detVideos.open = isOpen;
+          }
         }
+      } else {
+        const detExistente = divConteudo.querySelector('details.videos');
+        if (detExistente) detExistente.remove();
       }
-
-      const divAcoes = document.createElement('div');
-      divAcoes.style = 'display:flex; gap:8px; align-items:center; margin-top:8px;';
-      divAcoes.innerHTML = `
-        ${!['concluido', 'cancelado', 'sem_gravacoes'].includes(job.status) ? `<button class="cancelar" type="button" data-job-id="${job.id}">Cancelar download</button>` : ''}
-        ${['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(job.status) ? `<button class="excluir" type="button" data-job-id="${job.id}">Remover da lista</button>` : ''}
-      `;
-      divConteudo.appendChild(divAcoes);
-
-      const spanStatus = document.createElement('span');
-      spanStatus.className = 'status';
-      spanStatus.dataset.status = job.status;
-      spanStatus.textContent = job.status;
-
-      article.appendChild(divConteudo);
-      article.appendChild(spanStatus);
-      fragment.appendChild(article);
     });
-
-    jobs.innerHTML = '';
-    jobs.appendChild(fragment);
   }
 
   async function atualizarJobs() {
@@ -271,6 +669,15 @@
       saude.textContent = estadoWorker.erro ? `Trabalhador com erro: ${estadoWorker.erro}` : `Trabalhador: ${estadoWorker.status}`;
       saude.classList.toggle('erro', Boolean(estadoWorker.erro));
       renderizarJobs();
+
+      // Atualiza o contador de gravações concluídas (conta cada pedido/job concluído, não os trechos individuais)
+      const elContador = document.querySelector('#contador-concluidas');
+      if (elContador) {
+        const dosJobs = (todosJobs || []).filter(j => j.status === 'concluido').length;
+        const doHealth = (estadoWorker && typeof estadoWorker.total_concluidas === 'number') ? estadoWorker.total_concluidas : null;
+        const total = doHealth !== null ? doHealth : dosJobs;
+        elContador.textContent = total;
+      }
     } catch (erro) {
       saude.textContent = 'Trabalhador indisponivel.';
       saude.classList.add('erro');
@@ -279,7 +686,7 @@
   }
 
   async function cancelarJob(jobId) {
-    if (!window.confirm('Cancelar este download? Os trechos ja concluidos serao preservados.')) return;
+    if (!window.confirm('Cancelar este download e remove-lo da lista?')) return;
     try {
       const resposta = await fetch(`/api/jobs/${jobId}/cancel`, { method:'POST' });
       const retorno = await resposta.json();
@@ -317,10 +724,154 @@
   const inputCodigo = document.querySelector('#codigo_escola');
   const inputEscola = document.querySelector('#escola');
   const inputIp = document.querySelector('#dvr_ip');
+  const inputUsuario = document.querySelector('#usuario');
+  const inputSenha = document.querySelector('#senha');
+  const inputCameras = document.querySelector('#cameras');
+  const inputModeloDvr = document.querySelector('#dvr_modelo');
+  const inputCanaisDvr = document.querySelector('#dvr_canais');
+  const containerChipsCanais = document.querySelector('#chips-canais-ativos');
+  const statusSyncRocket = document.querySelector('#status-sync-rocket');
+  const btnSetaMultiDvr = document.querySelector('#btn-seta-multi-dvr');
+  const iconeSetaMultiDvr = document.querySelector('#icone-seta-multi-dvr');
+  const textoSetaMultiDvr = document.querySelector('#texto-seta-multi-dvr');
+  const painelTabelaDvrs = document.querySelector('#painel-tabela-dvrs');
+  const corpoTabelaMultiDvr = document.querySelector('#corpo-tabela-multi-dvr');
   const listaCodigos = document.querySelector('#lista_codigos');
   const listaNomes = document.querySelector('#lista_nomes');
   let mapaEscolasPorCodigo = new Map();
   let mapaEscolasPorNome = new Map();
+  let dvrsUnidadeAtual = [];
+
+  function renderizarMultiDvrs(listaDvrs) {
+    dvrsUnidadeAtual = Array.isArray(listaDvrs)
+      ? listaDvrs.filter(d => d && d.dvr_ip)
+      : [];
+    if (!btnSetaMultiDvr || !painelTabelaDvrs || !corpoTabelaMultiDvr) return;
+
+    if (dvrsUnidadeAtual.length <= 1) {
+      btnSetaMultiDvr.style.display = 'none';
+      painelTabelaDvrs.style.display = 'none';
+      corpoTabelaMultiDvr.innerHTML = '';
+      if (iconeSetaMultiDvr) iconeSetaMultiDvr.textContent = '▼';
+      return;
+    }
+
+    btnSetaMultiDvr.style.display = 'inline-flex';
+    if (textoSetaMultiDvr) {
+      textoSetaMultiDvr.textContent = `${dvrsUnidadeAtual.length} DVRs`;
+    }
+
+    const ipAtual = (inputIp?.value || '').trim();
+    corpoTabelaMultiDvr.innerHTML = dvrsUnidadeAtual.map((dvr, idx) => {
+      const canaisTxt = Array.isArray(dvr.canais_ativos)
+        ? dvr.canais_ativos.join(', ')
+        : (dvr.canais_ativos || '-');
+      const modeloTxt = dvr.modelo || dvr.nome_dvr || `DVR ${idx + 1}`;
+      const codExtra = (dvr.codigo_sistema && dvr.codigo_sistema !== inputCodigo?.value.trim())
+        ? ` <small style="color:var(--muted);">(${dvr.codigo_sistema})</small>`
+        : '';
+      const ativa = dvr.dvr_ip === ipAtual;
+      return `
+        <tr class="${ativa ? 'dvr-ativa' : ''}" data-dvr-index="${idx}">
+          <td><strong>${modeloTxt}</strong>${codExtra}</td>
+          <td><code>${dvr.dvr_ip}</code></td>
+          <td><small>${canaisTxt}</small></td>
+          <td style="text-align:right;">
+            <button type="button" class="btn-selecionar-dvr ${ativa ? 'ativa' : ''}" data-dvr-index="${idx}">
+              ${ativa ? '✓ Selecionada' : 'Selecionar'}
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function selecionarDvrDaUnidade(idx) {
+    const dvr = dvrsUnidadeAtual[idx];
+    if (!dvr) return;
+    if (dvr.dvr_ip && inputIp) inputIp.value = dvr.dvr_ip;
+    if (dvr.usuario && inputUsuario) inputUsuario.value = dvr.usuario;
+    if (dvr.senha && inputSenha) inputSenha.value = dvr.senha;
+    if (inputModeloDvr) inputModeloDvr.value = dvr.modelo || dvr.nome_dvr || '';
+    const canaisStr = Array.isArray(dvr.canais_ativos)
+      ? dvr.canais_ativos.join(', ')
+      : (dvr.canais_ativos || '');
+    if (inputCanaisDvr) inputCanaisDvr.value = canaisStr;
+    renderizarChipsCanais(dvr.canais_ativos || []);
+    renderizarMultiDvrs(dvrsUnidadeAtual);
+    agendarVerificacaoStatusDvr(50);
+  }
+
+  btnSetaMultiDvr?.addEventListener('click', () => {
+    if (!painelTabelaDvrs) return;
+    const aberto = painelTabelaDvrs.style.display !== 'none';
+    painelTabelaDvrs.style.display = aberto ? 'none' : 'block';
+    if (iconeSetaMultiDvr) iconeSetaMultiDvr.textContent = aberto ? '▼' : '▲';
+  });
+
+  corpoTabelaMultiDvr?.addEventListener('click', ev => {
+    const tr = ev.target.closest('tr[data-dvr-index]');
+    if (!tr) return;
+    const idx = Number(tr.dataset.dvrIndex);
+    if (!Number.isNaN(idx)) {
+      selecionarDvrDaUnidade(idx);
+    }
+  });
+
+  function renderizarChipsCanais(canaisTextoOuLista) {
+    if (!containerChipsCanais) return;
+    let lista = [];
+    if (Array.isArray(canaisTextoOuLista)) {
+      lista = canaisTextoOuLista.map(c => String(c).trim()).filter(Boolean);
+    } else if (typeof canaisTextoOuLista === 'string' && canaisTextoOuLista.trim()) {
+      lista = canaisTextoOuLista.split(',').map(c => c.trim()).filter(Boolean);
+    }
+    if (!lista.length) {
+      containerChipsCanais.style.display = 'none';
+      containerChipsCanais.innerHTML = '';
+      return;
+    }
+    const selecionados = new Set(
+      (inputCameras?.value || '').split(',').map(c => c.trim()).filter(Boolean)
+    );
+    containerChipsCanais.style.display = 'flex';
+    containerChipsCanais.innerHTML =
+      `<small style="width:100%; font-size:.7rem; color:var(--muted); margin-bottom:2px;">Clique nos canais ativos para selecionar no download:</small>` +
+      lista.map(ch => `
+        <span class="chip-canal ${selecionados.has(ch) ? 'selecionado' : ''}" data-canal="${ch}">
+          Cam ${ch}
+        </span>
+      `).join('') +
+      `<span class="chip-canal" data-canal="TODOS" style="background:#e0f2fe; color:#0369a1; border-color:#7dd3fc;">Todos (${lista.join(',')})</span>`;
+  }
+
+  containerChipsCanais?.addEventListener('click', ev => {
+    const chip = ev.target.closest('.chip-canal');
+    if (!chip || !inputCameras) return;
+    const ch = chip.dataset.canal;
+    const canaisDisp = (inputCanaisDvr?.value || '').split(',').map(c => c.trim()).filter(Boolean);
+    if (ch === 'TODOS') {
+      inputCameras.value = canaisDisp.join(',');
+      renderizarChipsCanais(canaisDisp);
+      return;
+    }
+    const atuais = inputCameras.value.split(',').map(c => c.trim()).filter(Boolean);
+    const idx = atuais.indexOf(ch);
+    if (idx >= 0) {
+      atuais.splice(idx, 1);
+    } else {
+      atuais.push(ch);
+    }
+    atuais.sort((a, b) => Number(a) - Number(b));
+    inputCameras.value = atuais.join(',');
+    renderizarChipsCanais(canaisDisp);
+  });
+
+  inputCameras?.addEventListener('input', () => {
+    if (inputCanaisDvr?.value) {
+      renderizarChipsCanais(inputCanaisDvr.value);
+    }
+  });
 
   async function carregarCatalogoEscolas() {
     try {
@@ -351,10 +902,110 @@
     }
   }
 
+  const painelUnidadeRocket = document.querySelector('#painel-unidade-rocket');
+  const btnRocketUnidade = document.querySelector('#btn-rocket-unidade');
+  const textoRocketUnidade = document.querySelector('#texto-rocket-unidade');
+  const badgeStatusDvr = document.querySelector('#badge-status-dvr');
+  const bolinhaStatusDvr = document.querySelector('#bolinha-status-dvr');
+  const textoStatusDvr = document.querySelector('#texto-status-dvr');
+  let timerStatusDvrDebounce = null;
+  let tokenBuscaStatusDvr = 0;
+
+  async function verificarStatusDvrUnidade(silencioso = false) {
+    const cod = inputCodigo.value.trim();
+    const ipDigitado = inputIp.value.trim();
+    const nomeDigitado = inputEscola.value.trim();
+    const portaSdk = document.querySelector('#porta_sdk')?.value.trim() || '8000';
+
+    if (!cod) {
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
+      return;
+    }
+
+    // Exibe a barra com o botão do Rocket (🚀 + Unidade ao lado)
+    if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'flex';
+    const itemCat = mapaEscolasPorCodigo.get(cod);
+    const nomeUnidade = nomeDigitado || (itemCat && itemCat.nome) || `Unidade ${cod}`;
+    if (btnRocketUnidade) {
+      btnRocketUnidade.href = `https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(cod)}`;
+    }
+    if (textoRocketUnidade) {
+      textoRocketUnidade.textContent = `${cod} - ${nomeUnidade}`;
+    }
+
+    const ipAlvo = ipDigitado || (itemCat && itemCat.dvr_ip) || '';
+    if (!ipAlvo) {
+      if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr offline';
+      if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status offline';
+      if (textoStatusDvr) textoStatusDvr.textContent = 'Offline (Sem IP)';
+      return;
+    }
+
+    const meuToken = ++tokenBuscaStatusDvr;
+    if (!silencioso) {
+      if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr verificando';
+      if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status verificando';
+      if (textoStatusDvr) textoStatusDvr.textContent = 'Verificando...';
+    }
+
+    try {
+      const qs = new URLSearchParams({ ip: ipAlvo, codigo: cod, porta_sdk: portaSdk });
+      const res = await fetch(`/api/dvr/status?${qs.toString()}`);
+      if (meuToken !== tokenBuscaStatusDvr) return;
+      const dados = await res.json();
+      if (dados.online) {
+        if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr online';
+        if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status online';
+        if (textoStatusDvr) textoStatusDvr.textContent = 'Online';
+      } else {
+        if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr offline';
+        if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status offline';
+        if (textoStatusDvr) textoStatusDvr.textContent = 'Offline';
+      }
+    } catch (e) {
+      if (meuToken !== tokenBuscaStatusDvr) return;
+      if (badgeStatusDvr) badgeStatusDvr.className = 'badge-status-dvr offline';
+      if (bolinhaStatusDvr) bolinhaStatusDvr.className = 'bolinha-status offline';
+      if (textoStatusDvr) textoStatusDvr.textContent = 'Offline';
+    }
+  }
+
+  function agendarVerificacaoStatusDvr(delay = 300) {
+    const cod = inputCodigo.value.trim();
+    if (!cod) {
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
+      return;
+    }
+    if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'flex';
+    const itemCat = mapaEscolasPorCodigo.get(cod);
+    const nomeUnidade = inputEscola.value.trim() || (itemCat && itemCat.nome) || `Unidade ${cod}`;
+    if (btnRocketUnidade) {
+      btnRocketUnidade.href = `https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(cod)}`;
+    }
+    if (textoRocketUnidade) {
+      textoRocketUnidade.textContent = `${cod} - ${nomeUnidade}`;
+    }
+    clearTimeout(timerStatusDvrDebounce);
+    timerStatusDvrDebounce = setTimeout(() => verificarStatusDvrUnidade(false), delay);
+  }
+
+  // Re-verifica automaticamente a cada 12s enquanto o usuário estiver com um código preenchido
+  setInterval(() => {
+    if (inputCodigo && inputCodigo.value.trim()) {
+      verificarStatusDvrUnidade(true);
+    }
+  }, 12000);
+
   function aplicarEscola(item) {
     if (!item) return;
     if (item.codigo) inputCodigo.value = item.codigo;
     if (item.nome) inputEscola.value = item.nome;
+    if (item.dvr_usuario && inputUsuario) inputUsuario.value = item.dvr_usuario;
+    if (item.dvr_senha && inputSenha) inputSenha.value = item.dvr_senha;
+    if (inputModeloDvr) inputModeloDvr.value = item.dvr_modelo || '';
+    if (inputCanaisDvr) inputCanaisDvr.value = item.dvr_canais || '';
+    renderizarChipsCanais(item.dvr_canais || '');
+
     if (item.dvr_ip) {
       inputIp.value = item.dvr_ip;
       mensagem.style.color = 'var(--accent-dark)';
@@ -362,21 +1013,119 @@
     } else {
       inputIp.value = '';
       mensagem.style.color = 'var(--muted)';
-      mensagem.textContent = `Escola ${item.nome} selecionada. Digite o IP da DVR abaixo.`;
+      mensagem.textContent = `Escola ${item.nome} selecionada. Buscando dados completos no Rocket...`;
     }
+    renderizarMultiDvrs(item.dvrs || []);
+    agendarVerificacaoStatusDvr(80);
+  }
+
+  let timerBuscaRocket = null;
+  async function tentarAutocompletarViaRocketLocal(cod) {
+    if (!cod || cod.length < 2) return;
+    if (statusSyncRocket) {
+      statusSyncRocket.style.color = 'var(--warn)';
+      statusSyncRocket.textContent = '🔄 Sincronizando com o Rocket...';
+    }
+    try {
+      const res = await fetch(`/api/rocket/buscar/${encodeURIComponent(cod)}`);
+      if (!res.ok) {
+        if (statusSyncRocket) {
+          statusSyncRocket.style.color = 'var(--muted)';
+          statusSyncRocket.textContent = 'Preenchimento automático';
+        }
+        return;
+      }
+      const dados = await res.json();
+      if (!dados || !dados.sucesso) {
+        if (statusSyncRocket) {
+          statusSyncRocket.style.color = 'var(--muted)';
+          statusSyncRocket.textContent = 'Unidade não localizada no Rocket';
+        }
+        return;
+      }
+      if (inputCodigo.value.trim() !== cod) return;
+
+      if (dados.nome) inputEscola.value = dados.nome;
+      if (dados.dvr_ip) inputIp.value = dados.dvr_ip;
+      if (dados.usuario && inputUsuario) inputUsuario.value = dados.usuario;
+      if (dados.senha && inputSenha) inputSenha.value = dados.senha;
+      if (inputModeloDvr) inputModeloDvr.value = dados.modelo_dvr || '';
+      const canaisStr = Array.isArray(dados.canais_ativos)
+        ? dados.canais_ativos.join(', ')
+        : (dados.canais_ativos || '');
+      if (inputCanaisDvr) inputCanaisDvr.value = canaisStr;
+      renderizarChipsCanais(dados.canais_ativos || []);
+      renderizarMultiDvrs(dados.dvrs || []);
+
+      if (statusSyncRocket) {
+        statusSyncRocket.style.color = 'var(--accent-dark)';
+        const qtdDvrs = Array.isArray(dados.dvrs) ? dados.dvrs.length : 1;
+        statusSyncRocket.textContent = qtdDvrs > 1
+          ? `✅ Sincronizado (${qtdDvrs} DVRs na unidade)`
+          : '✅ Sincronizado e salvo no banco!';
+      }
+      mensagem.style.color = 'var(--accent-dark)';
+      mensagem.textContent = `Dados puxados do Rocket 🚀 e salvos no banco: ${dados.nome || cod} | IP: ${dados.dvr_ip || '-'} | Modelo: ${dados.modelo_dvr || '-'}`;
+
+      await carregarCatalogoEscolas();
+      agendarVerificacaoStatusDvr(50);
+    } catch {
+      if (statusSyncRocket) {
+        statusSyncRocket.style.color = 'var(--muted)';
+        statusSyncRocket.textContent = 'Preenchimento automático';
+      }
+    }
+  }
+
+  function escolaPrecisaComplementarNoRocket(item) {
+    if (!item) return true;
+    return !item.dvr_ip || !item.dvr_senha || !item.dvr_modelo || !item.dvr_canais || !Array.isArray(item.dvrs) || item.dvrs.length === 0;
   }
 
   inputCodigo.addEventListener('input', () => {
     const cod = inputCodigo.value.trim();
+    if (!cod) {
+      if (inputModeloDvr) inputModeloDvr.value = '';
+      if (inputCanaisDvr) inputCanaisDvr.value = '';
+      renderizarChipsCanais([]);
+      renderizarMultiDvrs([]);
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
+      return;
+    }
     if (mapaEscolasPorCodigo.has(cod)) {
-      aplicarEscola(mapaEscolasPorCodigo.get(cod));
+      const item = mapaEscolasPorCodigo.get(cod);
+      aplicarEscola(item);
+      if (escolaPrecisaComplementarNoRocket(item)) {
+        clearTimeout(timerBuscaRocket);
+        timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 350);
+      } else if (statusSyncRocket) {
+        statusSyncRocket.style.color = 'var(--accent-dark)';
+        statusSyncRocket.textContent = '✅ Dados completos no banco';
+      }
+    } else {
+      agendarVerificacaoStatusDvr(300);
+      clearTimeout(timerBuscaRocket);
+      timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 400);
     }
   });
 
   inputEscola.addEventListener('input', () => {
     const nm = inputEscola.value.trim().toLowerCase();
     if (mapaEscolasPorNome.has(nm)) {
-      aplicarEscola(mapaEscolasPorNome.get(nm));
+      const item = mapaEscolasPorNome.get(nm);
+      aplicarEscola(item);
+      if (escolaPrecisaComplementarNoRocket(item) && item.codigo) {
+        clearTimeout(timerBuscaRocket);
+        timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(item.codigo), 350);
+      }
+    } else if (inputCodigo.value.trim()) {
+      agendarVerificacaoStatusDvr(300);
+    }
+  });
+
+  inputIp.addEventListener('input', () => {
+    if (inputCodigo.value.trim()) {
+      agendarVerificacaoStatusDvr(400);
     }
   });
 
@@ -417,6 +1166,7 @@
       mensagem.style.color = 'var(--accent-dark)';
       mensagem.textContent = `Download adicionado com sucesso (Job #${retorno.id}). O trabalhador vai iniciar em seguida.`;
       formulario.reset();
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
       document.querySelector('#usuario').value = 'admin'; 
       document.querySelector('#porta_sdk').value = '8000';
       await carregarCatalogoEscolas();
@@ -429,8 +1179,655 @@
     }
   });
 
+  // Controle de Abas
+  const btnsAbas = document.querySelectorAll('.btn-aba');
+  const painelDownloads = document.querySelector('#painel-downloads');
+  const painelTelegram = document.querySelector('#painel-telegram');
+  const painelEstatisticas = document.querySelector('#painel-estatisticas');
+  const badgeTelegram = document.querySelector('#badge-telegram');
+  const statusTelegramEl = document.querySelector('#telegram-status');
+  const listaTelegramEl = document.querySelector('#lista-telegram');
+  let filtroTelegramAtual = 'aguardando_ip';
+  let solicitacoesTelegram = [];
+
+  btnsAbas.forEach(btn => {
+    btn.addEventListener('click', () => {
+      btnsAbas.forEach(b => b.classList.remove('ativa'));
+      btn.classList.add('ativa');
+      const alvo = btn.dataset.alvo;
+      painelDownloads.style.display = alvo === 'painel-downloads' ? 'block' : 'none';
+      painelTelegram.style.display = alvo === 'painel-telegram' ? 'block' : 'none';
+      if (painelEstatisticas) painelEstatisticas.style.display = alvo === 'painel-estatisticas' ? 'block' : 'none';
+
+      if (alvo === 'painel-telegram') {
+        atualizarTelegram();
+      } else if (alvo === 'painel-estatisticas') {
+        atualizarEstatisticas();
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-filtro-tg').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-filtro-tg').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      filtroTelegramAtual = btn.dataset.filtro;
+      renderizarSolicitacoesTelegram();
+    });
+  });
+
+  document.querySelector('#btn-recarregar-telegram')?.addEventListener('click', atualizarTelegram);
+
+  async function atualizarTelegram() {
+    try {
+      const [resStatus, resSols] = await Promise.all([
+        fetch('/api/telegram/status'),
+        fetch('/api/telegram/solicitacoes')
+      ]);
+      const statusTg = await resStatus.json();
+      solicitacoesTelegram = await resSols.json();
+
+      const pendentes = statusTg.pendentes_ip || 0;
+      if (pendentes > 0) {
+        badgeTelegram.style.display = 'inline-block';
+        badgeTelegram.textContent = pendentes;
+        badgeTelegram.classList.add('tem-pendente');
+      } else {
+        badgeTelegram.style.display = 'none';
+        badgeTelegram.classList.remove('tem-pendente');
+      }
+
+      if (statusTelegramEl) {
+        if (statusTg.ativo) {
+          statusTelegramEl.innerHTML = `<span style="color:var(--accent); font-weight:700;">● Online</span>`;
+        } else if (!statusTg.sessao_autenticada) {
+          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">⚠️ Aguardando Login</span>`;
+        } else {
+          statusTelegramEl.innerHTML = `<span style="color:var(--warn); font-weight:700;">○ Inativo</span>`;
+        }
+      }
+
+      renderizarSolicitacoesTelegram();
+    } catch (e) {
+      console.warn('Erro ao atualizar Telegram:', e);
+    }
+  }
+
+  const formatarParaInputLocal = isoStr => {
+    if (!isoStr) return '';
+    try {
+      if (isoStr.length >= 16 && isoStr.includes('T')) {
+        return isoStr.slice(0, 16);
+      }
+      const d = new Date(isoStr);
+      if (Number.isNaN(d.getTime())) return '';
+      const ano = d.getFullYear();
+      const mes = String(d.getMonth() + 1).padStart(2, '0');
+      const dia = String(d.getDate()).padStart(2, '0');
+      const hora = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${ano}-${mes}-${dia}T${hora}:${min}`;
+    } catch {
+      return '';
+    }
+  };
+
+  function renderizarSolicitacoesTelegram() {
+    if (!listaTelegramEl) return;
+    let lista = solicitacoesTelegram;
+    if (filtroTelegramAtual === 'aguardando_ip') {
+      lista = solicitacoesTelegram.filter(s => s.status === 'aguardando_ip');
+    } else if (filtroTelegramAtual === 'baixando') {
+      lista = solicitacoesTelegram.filter(s => ['baixando', 'concluido'].includes(s.status));
+    }
+
+    if (!lista.length) {
+      listaTelegramEl.innerHTML = `<p class="empty">Nenhuma solicitação ${filtroTelegramAtual === 'aguardando_ip' ? 'aguardando IP' : 'nessa categoria'}.</p>`;
+      return;
+    }
+
+    // 1. Preserva quais acordeões estavam abertos
+    const idsAbertos = new Set();
+    const idsMsgAberta = new Set();
+    const idsAlterarAberta = new Set();
+    const valoresDigitados = new Map();
+
+    listaTelegramEl.querySelectorAll('details.card-tg').forEach(card => {
+      const id = card.dataset.id;
+      if (!id) return;
+      if (card.open) idsAbertos.add(id);
+
+      const detMsg = card.querySelector('details.card-tg-orig');
+      if (detMsg && detMsg.open) idsMsgAberta.add(id);
+
+      const detAlt = card.querySelector('details.secao-alterar');
+      if (detAlt && detAlt.open) idsAlterarAberta.add(id);
+
+      valoresDigitados.set(id, {
+        cams: card.querySelector('.edit-cameras')?.value,
+        ini: card.querySelector('.edit-inicio')?.value,
+        fim: card.querySelector('.edit-fim')?.value,
+        cod: card.querySelector('.edit-codigo')?.value,
+        nome: card.querySelector('.edit-nome')?.value,
+        ip: card.querySelector('.input-ip')?.value,
+        senha: card.querySelector('.input-senha')?.value,
+      });
+    });
+
+    // 2. Lembra o foco e seleção do cursor caso o operador esteja digitando em algum campo
+    const elAtivo = document.activeElement;
+    let focoInfo = null;
+    if (elAtivo && listaTelegramEl.contains(elAtivo)) {
+      const cardFoco = elAtivo.closest('details.card-tg');
+      if (cardFoco && cardFoco.dataset.id) {
+        focoInfo = {
+          id: cardFoco.dataset.id,
+          selector: elAtivo.className ? '.' + elAtivo.className.split(' ')[0] : elAtivo.tagName.toLowerCase(),
+          start: elAtivo.selectionStart,
+          end: elAtivo.selectionEnd
+        };
+      }
+    }
+
+    const fragment = document.createDocumentFragment();
+    lista.forEach(item => {
+      const card = document.createElement('details');
+      card.className = 'card-tg';
+      const idStr = String(item.id);
+      card.dataset.id = idStr;
+      if (idsAbertos.has(idStr)) {
+        card.open = true;
+      }
+
+      // Restaura valores digitados pelo usuário caso ele tenha editado
+      const valAnt = valoresDigitados.get(idStr) || {};
+      const valCams = valAnt.cams !== undefined ? valAnt.cams : (item.cameras || '1');
+      const valIni = valAnt.ini !== undefined ? valAnt.ini : formatarParaInputLocal(item.data_inicio);
+      const valFim = valAnt.fim !== undefined ? valAnt.fim : formatarParaInputLocal(item.data_fim);
+      const valCod = valAnt.cod !== undefined ? valAnt.cod : (item.codigo_escola || '');
+      const valNome = valAnt.nome !== undefined ? valAnt.nome : (item.nome_escola || '');
+      const valIp = valAnt.ip !== undefined ? valAnt.ip : (item.dvr_ip || '');
+      const valSenha = valAnt.senha !== undefined ? valAnt.senha : 'IINms4562022';
+
+      const openMsg = idsMsgAberta.has(idStr) ? 'open' : '';
+      const openAlt = idsAlterarAberta.has(idStr) ? 'open' : '';
+
+      let badgeCor = 'background:#fef3c7; color:#92400e;';
+      let textoStatus = 'Aguardando IP';
+      if (item.status === 'baixando') {
+        badgeCor = 'background:#dbeafe; color:#1e40af;';
+        textoStatus = item.job_status ? `Baixando (${item.job_status})` : 'Baixando';
+      } else if (item.status === 'concluido' || item.job_status === 'concluido') {
+        badgeCor = 'background:#dcfce7; color:#166534;';
+        textoStatus = 'Concluído';
+      } else if (item.status === 'descartado') {
+        badgeCor = 'background:#f3f4f6; color:#4b5563;';
+        textoStatus = 'Descartado';
+      } else if (item.status === 'erro_leitura') {
+        badgeCor = 'background:#fee2e2; color:#991b1b;';
+        textoStatus = 'Erro Leitura';
+      }
+
+      const btnRocketTg = valCod
+        ? `<a class="btn-rocket-mini link-rocket-tg" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(valCod)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" title="Abrir unidade ${valCod} no Rocket">🚀 ${valCod} - ${valNome || 'Unidade'}</a>`
+        : '';
+
+      card.innerHTML = `
+        <summary class="card-tg-summary">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span class="seta-tg">▶</span>
+            <strong style="font-size:1.02rem;">${item.nome_escola || 'Escola ' + (item.codigo_escola || 'não informada')}</strong>
+            <span style="color:var(--muted); font-size:.82rem;">(Cód: <strong>${item.codigo_escola || '-'}</strong>)</span>
+            ${btnRocketTg}
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <span style="color:var(--muted); font-size:.82rem;">📹 Câm ${item.cameras || '1'} | 🕒 ${mostrarData(item.data_inicio)} até ${mostrarData(item.data_fim)}</span>
+            <span style="padding:3px 10px; border-radius:12px; font-weight:700; font-size:.78rem; ${badgeCor}">${textoStatus}</span>
+          </div>
+        </summary>
+
+        <div class="card-tg-body">
+          <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; color:var(--muted); font-size:.85rem;">
+            <span>👤 Solicitante: <strong style="color:var(--ink);">${item.solicitante || 'Telegram'}</strong></span>
+            <span>📅 Recebido em: <strong style="color:var(--ink);">${mostrarData(item.recebido_em)}</strong></span>
+            ${item.dvr_ip ? `<span>🌐 DVR IP: <strong style="color:var(--ink);">${item.dvr_ip}</strong></span>` : ''}
+            ${btnRocketTg}
+          </div>
+
+          <details class="card-tg-orig" ${openMsg}>
+            <summary>Ver mensagem original recebida</summary>
+            <p style="margin:6px 0 0; font-style:italic; white-space:pre-wrap;">"${item.mensagem_original}"</p>
+          </details>
+
+          <details class="secao-alterar" ${openAlt}>
+            <summary>✏️ Alterar informações da gravação</summary>
+            <div class="grid-alterar">
+              <div>
+                <label>Câmeras</label>
+                <input type="text" class="edit-cameras" value="${valCams}" placeholder="Ex: 1,2">
+              </div>
+              <div>
+                <label>Data/Hora Início</label>
+                <input type="datetime-local" class="edit-inicio" value="${valIni}">
+              </div>
+              <div>
+                <label>Data/Hora Fim</label>
+                <input type="datetime-local" class="edit-fim" value="${valFim}">
+              </div>
+              <div>
+                <label>Código Escola</label>
+                <input type="text" class="edit-codigo" value="${valCod}">
+              </div>
+              <div>
+                <label>Nome Escola</label>
+                <input type="text" class="edit-nome" value="${valNome}">
+              </div>
+            </div>
+          </details>
+
+          ${item.status === 'aguardando_ip' ? `
+            <div class="form-acao-tg" data-solic-id="${item.id}">
+              <div>
+                <label style="display:flex; align-items:center; gap:6px;">
+                  <span>Endereço IP da DVR</span>
+                  <span class="bolinha-status verificando dot-tg-ip" style="${valIp ? 'display:inline-block;' : 'display:none;'}" data-ip="${valIp}" title="Status da DVR"></span>
+                </label>
+                <input type="text" class="input-ip" placeholder="Ex: 192.168.1.10" value="${valIp}" oninput="verificarIpCardTelegram(this)">
+              </div>
+              <div>
+                <label>Senha da DVR</label>
+                <input type="password" class="input-senha" placeholder="Senha da DVR" value="${valSenha}">
+              </div>
+              <div>
+                <button type="button" class="btn-baixar-tg" onclick="iniciarSolicitacao(${item.id}, this)">▶ Baixar e Salvar IP</button>
+              </div>
+              <div>
+                <button type="button" class="btn-descartar-tg" onclick="descartarSolicitacao(${item.id}, this)">✕ Descartar</button>
+              </div>
+            </div>
+          ` : `
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-top:6px; border-top:1px solid var(--line);">
+              <span>Job ID: <strong>#${item.job_id || '-'}</strong> | Status: <strong>${textoStatus}</strong></span>
+              ${item.job_id ? `<button type="button" class="btn-filtro" style="margin:0;" onclick="irParaJob(${item.job_id})">Ver progresso na Central ➔</button>` : ''}
+            </div>
+          `}
+        </div>
+      `;
+
+      fragment.appendChild(card);
+    });
+
+    listaTelegramEl.innerHTML = '';
+    listaTelegramEl.appendChild(fragment);
+    listaTelegramEl.querySelectorAll('.input-ip').forEach(inp => {
+      if (inp.value.trim()) verificarIpCardTelegram(inp);
+    });
+
+    // Restaura o foco e a seleção de texto caso o operador estivesse digitando
+    if (focoInfo) {
+      const cardFoco = listaTelegramEl.querySelector(`details.card-tg[data-id="${focoInfo.id}"]`);
+      if (cardFoco) {
+        const campoFoco = cardFoco.querySelector(focoInfo.selector);
+        if (campoFoco) {
+          campoFoco.focus();
+          if (typeof focoInfo.start === 'number' && typeof focoInfo.end === 'number') {
+            try { campoFoco.setSelectionRange(focoInfo.start, focoInfo.end); } catch (e) {}
+          }
+        }
+      }
+    }
+  }
+
+  const timersIpTg = new WeakMap();
+  function verificarIpCardTelegram(inputEl) {
+    if (!inputEl) return;
+    const container = inputEl.closest('div');
+    const dot = container ? container.querySelector('.dot-tg-ip') : null;
+    if (!dot) return;
+    const ip = inputEl.value.trim();
+    if (!ip) {
+      dot.style.display = 'none';
+      return;
+    }
+    dot.style.display = 'inline-block';
+    dot.className = 'bolinha-status verificando dot-tg-ip';
+    dot.title = 'Verificando DVR...';
+    clearTimeout(timersIpTg.get(inputEl));
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/dvr/status?ip=${encodeURIComponent(ip)}`);
+        const d = await res.json();
+        const on = Boolean(d.online);
+        dot.className = `bolinha-status ${on ? 'online' : 'offline'} dot-tg-ip`;
+        dot.title = on ? `DVR ${ip} Online` : `DVR ${ip} Offline`;
+      } catch {
+        dot.className = 'bolinha-status offline dot-tg-ip';
+        dot.title = `DVR ${ip} Offline`;
+      }
+    }, 350);
+    timersIpTg.set(inputEl, t);
+  }
+
+  async function iniciarSolicitacao(id, botao) {
+    const card = botao.closest('.card-tg');
+    const inputIp = card.querySelector('.input-ip');
+    const inputSenha = card.querySelector('.input-senha');
+    const ip = inputIp ? inputIp.value.trim() : '';
+    const senha = inputSenha ? inputSenha.value.trim() : '';
+
+    if (!ip) {
+      alert('Por favor, informe o IP da DVR da escola.');
+      inputIp.focus();
+      return;
+    }
+
+    // Coleta dados opcionais caso o usuario tenha editado em "Alterar informacoes da gravacao"
+    const editCams = card.querySelector('.edit-cameras')?.value.trim();
+    const editIni = card.querySelector('.edit-inicio')?.value.trim();
+    const editFim = card.querySelector('.edit-fim')?.value.trim();
+    const editCod = card.querySelector('.edit-codigo')?.value.trim();
+    const editNome = card.querySelector('.edit-nome')?.value.trim();
+
+    const payload = {
+      dvr_ip: ip,
+      senha: senha,
+      cameras: editCams,
+      codigo_escola: editCod,
+      nome_escola: editNome
+    };
+    if (editIni) payload.data_inicio = iso(editIni);
+    if (editFim) payload.data_fim = iso(editFim);
+
+    botao.disabled = true;
+    botao.textContent = 'Iniciando...';
+    try {
+      const res = await fetch(`/api/telegram/solicitacoes/${id}/iniciar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.erro || 'Erro ao iniciar download');
+
+      await carregarCatalogoEscolas();
+      await atualizarJobs();
+      await atualizarTelegram();
+    } catch (e) {
+      alert('Erro: ' + e.message);
+      botao.disabled = false;
+      botao.textContent = '▶ Baixar e Salvar IP';
+    }
+  }
+
+  async function descartarSolicitacao(id, botao) {
+    if (!confirm('Deseja realmente descartar esta solicitação?')) return;
+    botao.disabled = true;
+    try {
+      const res = await fetch(`/api/telegram/solicitacoes/${id}/descartar`, { method: 'POST' });
+      if (!res.ok) throw new Error('Falha ao descartar');
+      await atualizarTelegram();
+    } catch (e) {
+      alert('Erro: ' + e.message);
+      botao.disabled = false;
+    }
+  }
+
+  function irParaJob(jobId) {
+    btnsAbas[0].click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ==========================================
+  // Controle da Aba de Estatísticas
+  // ==========================================
+  let dadosEstatisticas = null;
+  let filtroUnidadesAtual = 'todas';
+  let termoBuscaUnidades = '';
+
+  async function atualizarEstatisticas() {
+    try {
+      const res = await fetch('/api/estatisticas');
+      if (!res.ok) throw new Error('Falha ao carregar estatísticas');
+      dadosEstatisticas = await res.json();
+      renderizarEstatisticas();
+    } catch (e) {
+      console.warn('Erro ao atualizar estatísticas:', e);
+    }
+  }
+
+  function renderizarEstatisticas() {
+    if (!dadosEstatisticas) return;
+    const { unidades, top5_unidades, protocolos, gravacoes, telegram } = dadosEstatisticas;
+
+    // 1. KPIs
+    const elTotalUnidades = document.querySelector('#stat-total-unidades');
+    const elSubUnidades = document.querySelector('#stat-sub-unidades');
+    const elComIp = document.querySelector('#stat-com-ip');
+    const elSemIp = document.querySelector('#stat-sem-ip');
+    const elSdkCount = document.querySelector('#stat-sdk-count');
+    const elIsapiCount = document.querySelector('#stat-isapi-count');
+    const elProtoSub = document.querySelector('#stat-proto-sub');
+    const elTgTotal = document.querySelector('#stat-telegram-total');
+    const elTgSub = document.querySelector('#stat-telegram-sub');
+    const elVolTotal = document.querySelector('#stat-total-volume');
+    const elConcluidas = document.querySelector('#stat-total-concluidas');
+
+    if (elTotalUnidades) elTotalUnidades.textContent = unidades.total.toLocaleString('pt-BR');
+    if (elSubUnidades) elSubUnidades.textContent = `${unidades.percentual_com_ip}% com IP cadastrado`;
+    if (elComIp) elComIp.textContent = unidades.com_ip.toLocaleString('pt-BR');
+    if (elSemIp) elSemIp.textContent = `${unidades.sem_ip.toLocaleString('pt-BR')} sem IP cadastrado`;
+
+    if (elSdkCount) elSdkCount.textContent = protocolos.sdk.toLocaleString('pt-BR');
+    if (elIsapiCount) elIsapiCount.textContent = protocolos.isapi.toLocaleString('pt-BR');
+    if (elProtoSub) elProtoSub.textContent = `Total: ${protocolos.total.toLocaleString('pt-BR')} gravações`;
+
+    if (elTgTotal) elTgTotal.textContent = telegram.total.toLocaleString('pt-BR');
+    if (elTgSub) elTgSub.textContent = `${telegram.automaticos} automáticas | ${telegram.aguardando_ip} pendentes`;
+
+    if (elVolTotal) elVolTotal.textContent = formatBytes(gravacoes.total_bytes);
+    if (elConcluidas) elConcluidas.textContent = `${gravacoes.total_concluidas.toLocaleString('pt-BR')} gravações concluídas`;
+
+    // Atualiza também o contador do cabeçalho
+    const elContadorGeral = document.querySelector('#contador-concluidas');
+    if (elContadorGeral && gravacoes.total_concluidas > 0) {
+      elContadorGeral.textContent = gravacoes.total_concluidas;
+    }
+
+    // 2. Top 5 Unidades
+    const listaTop5El = document.querySelector('#lista-top5-unidades');
+    if (listaTop5El) {
+      if (!top5_unidades || !top5_unidades.length) {
+        listaTop5El.innerHTML = '<p class="empty">Nenhuma gravação concluída ainda para gerar o ranking.</p>';
+      } else {
+        const medalhas = ['🥇', '🥈', '🥉', '4º', '5º'];
+        listaTop5El.innerHTML = top5_unidades.map((item, idx) => `
+          <div class="item-top5">
+            <div class="item-top5-pos">${medalhas[idx] || (idx + 1) + 'º'}</div>
+            <div class="item-top5-info">
+              <strong>${item.nome}</strong>
+              <small>Código: <b>${item.codigo}</b>${item.cidade ? ' • ' + item.cidade : ''}${item.dvr_ip ? ' • IP: ' + item.dvr_ip : ' • <span style="color:var(--warn)">Sem IP</span>'}</small>
+            </div>
+            <span class="item-top5-badge">${item.gravacoes} ${item.gravacoes === 1 ? 'gravação' : 'gravações'}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 3. Tabela Retrátil de Unidades
+    const badgeEscolas = document.querySelector('#badge-total-escolas');
+    if (badgeEscolas) badgeEscolas.textContent = unidades.total;
+
+    filtrarERenderizarTabelaUnidades();
+  }
+
+  function filtrarERenderizarTabelaUnidades() {
+    if (!dadosEstatisticas || !dadosEstatisticas.unidades || !dadosEstatisticas.unidades.lista) return;
+    const tbody = document.querySelector('#corpo-tabela-unidades');
+    if (!tbody) return;
+
+    let lista = dadosEstatisticas.unidades.lista;
+
+    // Filtro por status do IP
+    if (filtroUnidadesAtual === 'com_ip') {
+      lista = lista.filter(u => u.dvr_ip && u.dvr_ip.trim() !== '');
+    } else if (filtroUnidadesAtual === 'sem_ip') {
+      lista = lista.filter(u => !u.dvr_ip || u.dvr_ip.trim() === '');
+    }
+
+    // Busca textual
+    if (termoBuscaUnidades) {
+      lista = lista.filter(u => {
+        const cod = String(u.codigo || '').toLowerCase();
+        const nome = String(u.nome || '').toLowerCase();
+        const cid = String(u.cidade || '').toLowerCase();
+        const ip = String(u.dvr_ip || '').toLowerCase();
+        return cod.includes(termoBuscaUnidades) ||
+               nome.includes(termoBuscaUnidades) ||
+               cid.includes(termoBuscaUnidades) ||
+               ip.includes(termoBuscaUnidades);
+      });
+    }
+
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">Nenhuma unidade encontrada para os filtros aplicados.</td></tr>';
+      return;
+    }
+
+    const maxRender = 300;
+    const itensRender = lista.slice(0, maxRender);
+
+    let html = itensRender.map(item => `
+      <tr>
+        <td>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <strong>${item.codigo}</strong>
+            <a class="btn-rocket-mini" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(item.codigo)}" target="_blank" rel="noopener noreferrer" title="Abrir unidade ${item.codigo} (${item.nome}) no Rocket">🚀</a>
+          </div>
+        </td>
+        <td>${item.nome}</td>
+        <td><small style="color:var(--muted);">${item.cidade || '-'}</small></td>
+        <td>
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${item.dvr_ip 
+              ? `<span class="bolinha-status verificando dot-unidade-ip" data-ip="${item.dvr_ip}" data-codigo="${item.codigo}" title="Verificando status da DVR..."></span>
+                 <button type="button" class="btn-acao-ip badge-ip-ok" data-codigo="${item.codigo}" data-nome="${item.nome}" data-ip="${item.dvr_ip}" title="Clique para editar este IP"><span>${item.dvr_ip}</span> <span style="font-size:.7rem; opacity:.75;">✏️</span></button>` 
+              : `<button type="button" class="btn-acao-ip badge-ip-sem" data-codigo="${item.codigo}" data-nome="${item.nome}" data-ip="" title="Clique para cadastrar o IP desta unidade"><span>+ Sem IP</span></button>`
+            }
+          </div>
+        </td>
+        <td style="text-align:center;">
+          <strong style="${item.gravacoes > 0 ? 'color:var(--accent-dark);' : 'color:var(--muted);'}">${item.gravacoes}</strong>
+        </td>
+      </tr>
+    `).join('');
+
+    if (lista.length > maxRender) {
+      html += `<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:10px; font-size:.82rem;">Mostrando ${maxRender} de ${lista.length} unidades. Use a busca acima para refinar.</td></tr>`;
+    }
+
+    tbody.innerHTML = html;
+    verificarBolinhasUnidadesNaTabela();
+  }
+
+  const cacheStatusUnidades = new Map();
+  async function verificarBolinhasUnidadesNaTabela() {
+    const dots = Array.from(document.querySelectorAll('.dot-unidade-ip'));
+    for (const dot of dots.slice(0, 40)) {
+      const ip = dot.dataset.ip;
+      if (!ip) continue;
+      if (cacheStatusUnidades.has(ip)) {
+        const on = cacheStatusUnidades.get(ip);
+        dot.className = `bolinha-status ${on ? 'online' : 'offline'} dot-unidade-ip`;
+        dot.title = on ? `DVR ${ip} Online` : `DVR ${ip} Offline`;
+        continue;
+      }
+      fetch(`/api/dvr/status?ip=${encodeURIComponent(ip)}`)
+        .then(r => r.json())
+        .then(d => {
+          const on = Boolean(d.online);
+          cacheStatusUnidades.set(ip, on);
+          dot.className = `bolinha-status ${on ? 'online' : 'offline'} dot-unidade-ip`;
+          dot.title = on ? `DVR ${ip} Online` : `DVR ${ip} Offline`;
+        })
+        .catch(() => {
+          dot.className = 'bolinha-status offline dot-unidade-ip';
+          dot.title = `DVR ${ip} Offline`;
+        });
+    }
+  }
+
+  async function editarIpEscola(codigo, nome, ipAtual) {
+    const textoPadrao = ipAtual || '';
+    const msg = ipAtual 
+      ? `Configurar IP da DVR:\n\nEscola: ${nome}\nCódigo: ${codigo}\n\n(Deixe em branco e confirme se quiser remover o IP cadastrado)`
+      : `Cadastrar IP da DVR:\n\nEscola: ${nome}\nCódigo: ${codigo}\n\nDigite o endereço IP da DVR:`;
+
+    const digitado = window.prompt(msg, textoPadrao);
+    if (digitado === null) return;
+
+    const ipLimpo = digitado.trim();
+
+    if (!ipLimpo) {
+      if (ipAtual) {
+        if (!confirm(`Deseja realmente remover o IP da escola ${nome}?`)) return;
+      } else {
+        return;
+      }
+    } else {
+      if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ipLimpo)) {
+        alert('Endereço IP inválido. Por favor, informe um formato válido (exemplo: 192.168.1.10).');
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch(`/api/escolas/${encodeURIComponent(codigo)}/salvar-ip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dvr_ip: ipLimpo })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.erro || 'Falha ao salvar IP');
+
+      await carregarCatalogoEscolas();
+      await atualizarEstatisticas();
+    } catch (err) {
+      alert('Erro ao salvar IP: ' + err.message);
+    }
+  }
+
+  document.querySelector('#corpo-tabela-unidades')?.addEventListener('click', evento => {
+    const btn = evento.target.closest('.btn-acao-ip');
+    if (btn) {
+      editarIpEscola(btn.dataset.codigo, btn.dataset.nome, btn.dataset.ip);
+    }
+  });
+
+  document.querySelector('#btn-recarregar-stats')?.addEventListener('click', atualizarEstatisticas);
+
+  document.querySelectorAll('.btn-filtro-unidade').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-filtro-unidade').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      filtroUnidadesAtual = btn.dataset.tipo;
+      filtrarERenderizarTabelaUnidades();
+    });
+  });
+
+  const inputFiltroUnidades = document.querySelector('#filtro-tabela-unidades');
+  if (inputFiltroUnidades) {
+    inputFiltroUnidades.addEventListener('input', e => {
+      termoBuscaUnidades = e.target.value.trim().toLowerCase();
+      filtrarERenderizarTabelaUnidades();
+    });
+  }
+
   carregarCatalogoEscolas();
   atualizarJobs(); setInterval(atualizarJobs, 5000);
+  atualizarTelegram(); setInterval(atualizarTelegram, 5000);
+  atualizarEstatisticas(); setInterval(atualizarEstatisticas, 15000);
+
 </script>
 </body>
 </html>
+

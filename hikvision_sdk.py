@@ -201,6 +201,28 @@ _sdk = None
 _sdk_carregado = False
 
 
+def _obter_caminho_curto_win(caminho):
+    """
+    No Windows, converte caminhos longos, com espacos ou com acentuacao para o formato 8.3
+    evitando que a DLL em C++ (HCNetSDK.dll / HCCore.dll) falhe ao localizar subpastas
+    ou criar arquivos locais.
+    """
+    if sys.platform == "win32" and caminho and os.path.exists(caminho):
+        try:
+            from ctypes import wintypes
+            _GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
+            _GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+            _GetShortPathNameW.restype = wintypes.DWORD
+
+            buf = ctypes.create_unicode_buffer(1024)
+            tam = _GetShortPathNameW(caminho, buf, 1024)
+            if tam > 0:
+                return buf.value
+        except Exception:
+            pass
+    return caminho
+
+
 def carregar_sdk():
     global _sdk, _sdk_carregado
     if _sdk_carregado:
@@ -212,7 +234,7 @@ def carregar_sdk():
         pasta_raiz,
     ]
 
-    nomes_dll = ["HCNetSDK.dll", "libhcnetsdk.so"]
+    nomes_dll = ["HCNetSDK.dll"] if sys.platform == "win32" else ["libhcnetsdk.so"]
 
     caminho_encontrado = None
     diretorio_dll = None
@@ -322,17 +344,21 @@ def carregar_sdk():
             _sdk.NET_DVR_SetReconnect.argtypes = [c_int, c_int]
             _sdk.NET_DVR_SetReconnect.restype = c_int
 
-        # REGISTRO OBRIGATORIO: NET_DVR_SetSDKInitCfg com caminho da pasta HCNetSDKCom
-        # DEVE SER CHAMADO ANTES DE NET_DVR_Init() para carregar os plugins de autenticacao e playback!
+        # REGISTRO OBRIGATORIO: NET_DVR_SetSDKInitCfg com o diretorio raiz da HCNetSDK.dll
+        # ATENCAO TECNICA CRITICA (Comprovado via engenharia reversa da HCCore.dll em 0x1800ae6a0):
+        # A DLL interna HCCore.dll concatena automaticamente "/HCNetSDKCom/" ao final do sPath
+        # passado em NET_SDK_INIT_CFG_SDK_PATH (2). Portanto, devemos passar 'diretorio_dll'
+        # (ex: .../sdk_dlls) e NUNCA '.../sdk_dlls/HCNetSDKCom', caso contrario ela procuraria em
+        # '.../sdk_dlls/HCNetSDKCom/HCNetSDKCom/' e falharia ao carregar os plugins de login/playback!
         if hasattr(_sdk, "NET_DVR_SetSDKInitCfg"):
             try:
                 _sdk.NET_DVR_SetSDKInitCfg.argtypes = [c_int, ctypes.c_void_p]
                 _sdk.NET_DVR_SetSDKInitCfg.restype = c_int
 
-                # 1. NET_SDK_INIT_CFG_SDK_PATH = 2
+                # 1. NET_SDK_INIT_CFG_SDK_PATH = 2 (Deve apontar para a pasta onde esta HCNetSDK.dll)
                 sdk_path_cfg = NET_DVR_LOCAL_SDK_PATH()
                 ctypes.memset(byref(sdk_path_cfg), 0, ctypes.sizeof(sdk_path_cfg))
-                caminho_cfg = subpasta_com if os.path.isdir(subpasta_com) else diretorio_dll
+                caminho_cfg = _obter_caminho_curto_win(diretorio_dll)
                 c_bytes = caminho_cfg.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
                 sdk_path_cfg.sPath = c_bytes
 
@@ -345,10 +371,11 @@ def carregar_sdk():
                 if not os.path.isfile(caminho_crypto):
                     caminho_crypto = os.path.join(diretorio_dll, "libcrypto.dll")
                 if os.path.isfile(caminho_crypto):
-                    b_crypto = caminho_crypto.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
+                    caminho_crypto_curto = _obter_caminho_curto_win(caminho_crypto)
+                    b_crypto = caminho_crypto_curto.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
                     buf_crypto = ctypes.create_string_buffer(b_crypto)
                     res_crypto = _sdk.NET_DVR_SetSDKInitCfg(3, ctypes.cast(buf_crypto, ctypes.c_void_p))
-                    print(f"[SDK] NET_DVR_SetSDKInitCfg(LIBEAY_PATH)={caminho_crypto} -> resultado: {res_crypto}")
+                    print(f"[SDK] NET_DVR_SetSDKInitCfg(LIBEAY_PATH)={caminho_crypto_curto} -> resultado: {res_crypto}")
                     sys.stdout.flush()
 
                 # 3. NET_SDK_INIT_CFG_SSLEAY_PATH = 4 (libssl)
@@ -356,10 +383,11 @@ def carregar_sdk():
                 if not os.path.isfile(caminho_ssl):
                     caminho_ssl = os.path.join(diretorio_dll, "libssl.dll")
                 if os.path.isfile(caminho_ssl):
-                    b_ssl = caminho_ssl.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
+                    caminho_ssl_curto = _obter_caminho_curto_win(caminho_ssl)
+                    b_ssl = caminho_ssl_curto.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")[:255]
                     buf_ssl = ctypes.create_string_buffer(b_ssl)
                     res_ssl = _sdk.NET_DVR_SetSDKInitCfg(4, ctypes.cast(buf_ssl, ctypes.c_void_p))
-                    print(f"[SDK] NET_DVR_SetSDKInitCfg(SSLEAY_PATH)={caminho_ssl} -> resultado: {res_ssl}")
+                    print(f"[SDK] NET_DVR_SetSDKInitCfg(SSLEAY_PATH)={caminho_ssl_curto} -> resultado: {res_ssl}")
                     sys.stdout.flush()
             except Exception as e_cfg:
                 print(f"[SDK] Aviso ao configurar NET_DVR_SetSDKInitCfg: {e_cfg}")
@@ -372,13 +400,13 @@ def carregar_sdk():
             try:
                 pasta_log = os.path.join(pasta_raiz, "sdk_logs")
                 os.makedirs(pasta_log, exist_ok=True)
-                _sdk.NET_DVR_SetLogToFile(3, pasta_log.encode("utf-8"), 0)
+                _sdk.NET_DVR_SetLogToFile(3, _obter_caminho_curto_win(pasta_log).encode("utf-8"), 0)
             except Exception:
                 pass
 
         if hasattr(_sdk, "NET_DVR_SetConnectTime"):
-            # Timeout de 5000ms (5s) com 3 tentativas
-            _sdk.NET_DVR_SetConnectTime(5000, 3)
+            # Timeout de 4000ms (4s) com 2 tentativas para evitar lentidao excessiva em quedas de rede
+            _sdk.NET_DVR_SetConnectTime(4000, 2)
         if hasattr(_sdk, "NET_DVR_SetReconnect"):
             _sdk.NET_DVR_SetReconnect(10000, 1)
 
@@ -394,6 +422,18 @@ def carregar_sdk():
 
 def sdk_disponivel():
     return carregar_sdk()
+
+
+def fechar_sessao_sdk(user_id):
+    """
+    Encerra com seguranca uma sessao aberta no SDK (NET_DVR_Logout_V30).
+    Usado ao final do job para liberar a conexao na DVR sem causar multiplos logins/logouts.
+    """
+    if user_id is not None and user_id >= 0 and _sdk is not None:
+        try:
+            _sdk.NET_DVR_Logout_V30(int(user_id))
+        except Exception:
+            pass
 
 
 def _limpar_ip_e_porta(dvr_ip, porta_padrao=8000):
@@ -428,30 +468,68 @@ def _extrair_info_dispositivo(user_id, dev_info_v40):
 
 def _fazer_login(dvr_ip, porta, usuario, senha):
     """
-    Autentica na DVR via SDK.
-    Tenta na seguinte sequencia de compatibilidade:
-      1. NET_DVR_Login_V40 em modo Private com TLS adaptativo (porta 8000)
-      2. NET_DVR_Login_V40 em modo Private sem TLS (porta 8000)
-      3. NET_DVR_Login_V40 em modo Self-adaptive (como o iVMS-4200 negocia com DVRs modernos)
-      4. NET_DVR_Login_V30 (modo classico legado sincrono)
-      5. NET_DVR_Login_V40 em modo ISAPI (porta HTTP 80 caso 8000 esteja bloqueada)
+    Autentica na DVR via SDK de forma inteligente e segura contra bloqueios (Illegal Login Lock).
+
+    Ordem de tentativas:
+      1. Modo Privado (byLoginMode=0) com TLS Autoadaptativo (byHttps=2):
+         O proprio SDK negocia automaticamente TLS ou TCP com a DVR na porta 8000.
+      2. Se falhar por incompatibilidade de TLS (e NAO por erro de senha ou timeout de rede!),
+         tenta Modo Privado TCP Direto sem TLS (byLoginMode=0, byHttps=0).
+      3. Se ainda falhar por protocolo antigo (e NAO por senha/rede!), tenta NET_DVR_Login_V30
+         (para DVRs JFL/Hikvision de geracoes antigas).
+      * PROTECAO ANTI-BLOQUEIO (Illegal Login Lock):
+        Se qualquer tentativa retornar Codigo 1 (NET_DVR_PASSWORD_ERROR), Codigo 2,
+        conta bloqueada (dwSurplusLockTime > 0) ou porta offline (7, 10), interrompe
+        IMEDIATAMENTE para nunca bloquear o usuario 'admin' da DVR por 30 minutos!
+
     Retorna uma tupla (user_id, dev_info_v30).
     """
+    if not carregar_sdk() or _sdk is None:
+        return -1, None
+
     ip_limpo, porta_num = _limpar_ip_e_porta(dvr_ip, porta)
+
+    # Higieniza usuario e senha contra espacos invisiveis ou quebras de linha
+    usuario_limpo = str(usuario or "admin").strip()
+    senha_limpa = str(senha or "").strip()
+
+    if not senha_limpa:
+        print(f"[SDK] Aviso: Senha em branco para DVR {ip_limpo}:{porta_num}. Abortando tentativa SDK para nao bloquear a DVR.")
+        sys.stdout.flush()
+        return -1, None
+
     ultimo_erro = 0
 
+    def _deve_abortar_tentativas(cod_erro, dev_v40=None):
+        tentativas_restantes = int(getattr(dev_v40, "byRetryLoginTime", 0)) if dev_v40 else 0
+        tempo_bloqueio = int(getattr(dev_v40, "dwSurplusLockTime", 0)) if dev_v40 else 0
+        if cod_erro in (1, 2) or tempo_bloqueio > 0:
+            info_lock = ""
+            if tempo_bloqueio > 0:
+                info_lock = f" [CONTA BLOQUEADA NA DVR por mais {tempo_bloqueio}s ({tempo_bloqueio // 60}min)]"
+            elif tentativas_restantes > 0:
+                info_lock = f" [Tentativas restantes antes de bloquear a DVR: {tentativas_restantes}]"
+            print(f"[SDK] Login recusado pela DVR {ip_limpo}:{porta_num}: {formatar_erro_sdk(cod_erro)}{info_lock}. Abortando novas tentativas SDK para proteger a DVR.")
+            sys.stdout.flush()
+            return True
+        if cod_erro in (7, 10):
+            print(f"[SDK] Porta {porta_num} inacessivel ou sem resposta em {ip_limpo} ({formatar_erro_sdk(cod_erro)}).")
+            sys.stdout.flush()
+            return True
+        return False
+
     if hasattr(_sdk, "NET_DVR_Login_V40"):
-        # 1. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta 8000 com TLS adaptativo)
+        # 1. Tentativa Principal: Modo Privado (porta 8000) com TLS Autoadaptativo (byLoginMode=0, byHttps=2)
         login_info = NET_DVR_USER_LOGIN_INFO()
         ctypes.memset(byref(login_info), 0, ctypes.sizeof(login_info))
         login_info.bUseAsynLogin = 0
         login_info.wPort = porta_num
-        login_info.byLoginMode = 0  # 0 = Private Protocol
-        login_info.byHttps = 2      # 2 = Autoadaptativo TLS
+        login_info.byLoginMode = 0  # 0 = Private Protocol (Porta 8000 nativa)
+        login_info.byHttps = 2      # 2 = Autoadaptativo TLS/TCP
 
         login_info.sDeviceAddress = ip_limpo.encode("utf-8")[:128]
-        login_info.sUserName = usuario.encode("utf-8")[:63]
-        login_info.sPassword = senha.encode("utf-8")[:63]
+        login_info.sUserName = usuario_limpo.encode("utf-8")[:63]
+        login_info.sPassword = senha_limpa.encode("utf-8")[:63]
 
         dev_info_v40 = NET_DVR_DEVICEINFO_V40()
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
@@ -460,56 +538,46 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         sys.stdout.flush()
         if user_id >= 0:
             dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
-            print(f"[SDK] Login V40 privado TLS bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
+            print(f"[SDK] Login V40 privado autoadaptativo bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
             sys.stdout.flush()
             return user_id, dev_info_final
-        else:
-            ultimo_erro = _sdk.NET_DVR_GetLastError()
-            print(f"[SDK] Login V40 privado TLS falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando sem TLS...")
-            sys.stdout.flush()
 
-        # 2. Tentativa NET_DVR_Login_V40 (Modo Privado - Porta 8000 sem TLS direto)
-        login_info.byHttps = 0      # 0 = Sem TLS
+        ultimo_erro = _sdk.NET_DVR_GetLastError()
+        if _deve_abortar_tentativas(ultimo_erro, dev_info_v40):
+            return -1, None
+
+        print(f"[SDK] Login V40 TLS adaptativo retornou {formatar_erro_sdk(ultimo_erro)}. Tentando TCP direto sem TLS...")
+        sys.stdout.flush()
+
+        # 2. Segunda Tentativa: Modo Privado TCP Direto sem TLS (byLoginMode=0, byHttps=0)
+        login_info.byLoginMode = 0
+        login_info.byHttps = 0
         ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
         sys.stdout.flush()
         user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
         sys.stdout.flush()
         if user_id >= 0:
             dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
-            print(f"[SDK] Login V40 privado TCP bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
+            print(f"[SDK] Login V40 TCP direto bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
             sys.stdout.flush()
             return user_id, dev_info_final
-        else:
-            ultimo_erro = _sdk.NET_DVR_GetLastError()
-            print(f"[SDK] Login V40 privado TCP falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando modo autoadaptativo...")
-            sys.stdout.flush()
 
-        # 3. Tentativa NET_DVR_Login_V40 (Modo 2 = Autoadaptativo, padrao iVMS-4200)
-        login_info.byLoginMode = 2  # 2 = Self-adaptive
-        login_info.byHttps = 2
-        ctypes.memset(byref(dev_info_v40), 0, ctypes.sizeof(dev_info_v40))
-        sys.stdout.flush()
-        user_id = _sdk.NET_DVR_Login_V40(byref(login_info), byref(dev_info_v40))
-        sys.stdout.flush()
-        if user_id >= 0:
-            dev_info_final, serial = _extrair_info_dispositivo(user_id, dev_info_v40)
-            print(f"[SDK] Login V40 autoadaptativo bem-sucedido na DVR {ip_limpo}:{porta_num} (ID: {user_id}, Serial: {serial or 'N/A'})")
-            sys.stdout.flush()
-            return user_id, dev_info_final
-        else:
-            ultimo_erro = _sdk.NET_DVR_GetLastError()
-            print(f"[SDK] Login V40 autoadaptativo falhou ({formatar_erro_sdk(ultimo_erro)}). Tentando fallback V30...")
-            sys.stdout.flush()
+        ultimo_erro = _sdk.NET_DVR_GetLastError()
+        if _deve_abortar_tentativas(ultimo_erro, dev_info_v40):
+            return -1, None
 
-    # 4. Fallback para NET_DVR_Login_V30 (Padrao clássico para DVRs mais antigos)
+        print(f"[SDK] Login V40 TCP direto retornou {formatar_erro_sdk(ultimo_erro)}. Tentando fallback classico V30...")
+        sys.stdout.flush()
+
+    # 3. Fallback para NET_DVR_Login_V30 (para DVRs mais antigas que nao aceitam struct V40)
     info_v30 = NET_DVR_DEVICEINFO_V30()
     ctypes.memset(byref(info_v30), 0, ctypes.sizeof(info_v30))
     sys.stdout.flush()
     user_id = _sdk.NET_DVR_Login_V30(
         ip_limpo.encode("utf-8"),
         porta_num,
-        usuario.encode("utf-8"),
-        senha.encode("utf-8"),
+        usuario_limpo.encode("utf-8"),
+        senha_limpa.encode("utf-8"),
         byref(info_v30)
     )
     sys.stdout.flush()
@@ -589,46 +657,35 @@ def _determinar_canais_candidatos(camera_solicitada, dev_info):
     return resultado
 
 
-def _obter_caminho_curto_win(caminho):
-    """
-    No Windows, converte caminhos longos ou com acentuacao para o formato 8.3
-    evitando que a DLL em C++ falhe ao criar o arquivo de gravacao local.
-    """
-    if sys.platform == "win32":
-        try:
-            from ctypes import wintypes
-            _GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
-            _GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
-            _GetShortPathNameW.restype = wintypes.DWORD
-
-            buf = ctypes.create_unicode_buffer(1024)
-            tam = _GetShortPathNameW(caminho, buf, 1024)
-            if tam > 0:
-                return buf.value
-        except Exception:
-            pass
-    return caminho
-
-
 def baixar_por_tempo_sdk(
     dvr_ip, porta, usuario, senha, camera, inicio_dt, fim_dt, caminho_destino,
-    callback_progresso=None, checar_cancelado=None
+    callback_progresso=None, checar_cancelado=None, sessao_aberta=None
 ):
     """
     Realiza o download de uma faixa de tempo usando a porta 8000 via HCNetSDK.
     A DVR envia exclusivamente o trecho recortado.
     Totalmente compativel com cameras ONVIF / IP e canais analogicos.
+
+    Se 'sessao_aberta' (tupla (user_id, dev_info)) for fornecida pelo trabalhador,
+    reutiliza a conexao ja autenticada sem fazer novo login/logout, evitando que a DVR
+    rejeite reconexoes seguidas em milissegundos.
     """
     if not carregar_sdk() or _sdk is None:
         raise RuntimeError("DLL/biblioteca do SDK da Hikvision/JFL nao encontrada (pasta sdk_dlls).")
 
     ip_limpo, porta_num = _limpar_ip_e_porta(dvr_ip, porta)
-    print(f"[SDK] Conectando em {ip_limpo}:{porta_num} (porta SDK)...")
 
-    user_id, dev_info = _fazer_login(ip_limpo, porta_num, usuario, senha)
-    if user_id < 0:
-        cod_erro = _sdk.NET_DVR_GetLastError()
-        raise RuntimeError(f"Falha de login SDK na DVR {ip_limpo}:{porta_num} - {formatar_erro_sdk(cod_erro)}")
+    fechar_login_local = False
+    if sessao_aberta and isinstance(sessao_aberta, (tuple, list)) and len(sessao_aberta) == 2 and sessao_aberta[0] >= 0:
+        user_id, dev_info = sessao_aberta
+        print(f"[SDK] Reutilizando sessao autenticada (ID: {user_id}) em {ip_limpo}:{porta_num} para camera {camera}...")
+    else:
+        print(f"[SDK] Conectando em {ip_limpo}:{porta_num} (porta SDK)...")
+        user_id, dev_info = _fazer_login(ip_limpo, porta_num, usuario, senha)
+        if user_id < 0:
+            cod_erro = _sdk.NET_DVR_GetLastError()
+            raise RuntimeError(f"Falha de login SDK na DVR {ip_limpo}:{porta_num} - {formatar_erro_sdk(cod_erro)}")
+        fechar_login_local = True
 
     # Prepara o caminho destino no disco
     caminho_absoluto = os.path.normpath(os.path.abspath(caminho_destino))
@@ -637,11 +694,12 @@ def baixar_por_tempo_sdk(
 
     # O arquivo temporario durante o download do SDK e gravado OBRIGATORIAMENTE
     # no disco local (tempfile.gettempdir(), ex: C:\\Users\\...\\AppData\\Local\\Temp).
-    # Isso impede falhas de escrita caso o destino final seja um compartilhamento de rede UNC
-    # (\\\\172.168.12.3\\...) ou contenha acentos/espacos que a DLL nativa em C/C++ rejeite.
+    # Inclui timestamp em milissegundos e ID da thread para permitir multiplos downloads simultaneos sem colisao!
+    import threading
     pasta_temp_local = tempfile.gettempdir()
-    timestamp_tmp = int(time.time())
-    nome_arquivo_temp = f"hksdk_tmp_{timestamp_tmp}_cam{camera}.hik"
+    timestamp_tmp = int(time.time() * 1000)
+    tid = threading.get_ident()
+    nome_arquivo_temp = f"hksdk_tmp_{timestamp_tmp}_{tid}_cam{camera}.hik"
     caminho_arquivo_temp = os.path.join(pasta_temp_local, nome_arquivo_temp)
 
     # Converte caminho temporario para 8.3 seguro no Windows
@@ -717,7 +775,9 @@ def baixar_por_tempo_sdk(
 
             while True:
                 if checar_cancelado and checar_cancelado():
-                    _sdk.NET_DVR_StopGetFile(handle)
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     if os.path.exists(caminho_arquivo_temp):
                         try:
                             os.remove(caminho_arquivo_temp)
@@ -731,6 +791,9 @@ def baixar_por_tempo_sdk(
                     if callback_progresso:
                         callback_progresso(100)
                     print(f"[SDK] Download concluido com 100% no canal {canal_utilizado}.")
+                    # Fecha o handle na DLL imediatamente para descarregar o buffer e liberar o arquivo no Windows!
+                    _sdk.NET_DVR_StopGetFile(handle)
+                    handle = -1
                     break
 
                 elif pos < 0 or pos > 100:
@@ -740,7 +803,21 @@ def baixar_por_tempo_sdk(
                         time.sleep(1)
                         continue
 
+                    # Se a DVR encerrou a conexão (código 200 de término/exceção ou pos < 0),
+                    # mas o download já estava em >= 90% e o arquivo tem dados substanciais:
+                    tam_baixado = os.path.getsize(caminho_arquivo_temp) if os.path.exists(caminho_arquivo_temp) else 0
+                    if (ultimo_pos >= 90 or pos == 200) and tam_baixado > 1024 * 1024:
+                        print(f"[SDK] Aviso: DVR encerrou canal (pos: {pos}, ultimo_pos: {ultimo_pos}%), arquivo com {tam_baixado} bytes. Concluindo normalmente.")
+                        if callback_progresso:
+                            callback_progresso(100)
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
+                        break
+
                     cod_erro_pos = _sdk.NET_DVR_GetLastError()
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     raise RuntimeError(
                         f"Download SDK falhou durante transmissao (posicao: {pos}, {formatar_erro_sdk(cod_erro_pos)})"
                     )
@@ -750,9 +827,22 @@ def baixar_por_tempo_sdk(
                     ultimo_avanco = time.time()
                 elif pos == 0 and (time.time() - tempo_inicio > 20.0):
                     # Se após 20s a DVR conectou mas não enviou nenhum fluxo de dados
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     raise RuntimeError("Timeout no download SDK: a DVR abriu o canal mas não transmitiu fluxo de vídeo após 20s.")
                 elif time.time() - ultimo_avanco > 60.0:
                     # Se a transmissão congelou na mesma porcentagem por mais de 60s
+                    tam_baixado = os.path.getsize(caminho_arquivo_temp) if os.path.exists(caminho_arquivo_temp) else 0
+                    if ultimo_pos >= 90 and tam_baixado > 1024 * 1024:
+                        print(f"[SDK] Transmissão estagnou em {pos}%, mas já possui {tam_baixado} bytes gravados. Concluindo.")
+                        if handle >= 0:
+                            _sdk.NET_DVR_StopGetFile(handle)
+                            handle = -1
+                        break
+                    if handle >= 0:
+                        _sdk.NET_DVR_StopGetFile(handle)
+                        handle = -1
                     raise RuntimeError(f"Timeout no download SDK: transmissão congelada em {pos}% por mais de 60s.")
 
                 if callback_progresso and pos >= 0:
@@ -760,23 +850,46 @@ def baixar_por_tempo_sdk(
 
                 time.sleep(1)
 
+            # Garante que o handle foi fechado
+            if handle >= 0:
+                _sdk.NET_DVR_StopGetFile(handle)
+                handle = -1
+
+            # Pausa breve para o sistema de arquivos do Windows liberar o lock de escrita
+            time.sleep(0.3)
+
             # Move o arquivo temporario da pasta temp local para o destino final definitivo
-            if os.path.exists(caminho_arquivo_temp):
+            if os.path.exists(caminho_arquivo_temp) and os.path.getsize(caminho_arquivo_temp) > 0:
                 if os.path.exists(caminho_absoluto):
                     try:
                         os.remove(caminho_absoluto)
                     except OSError:
                         pass
-                shutil.move(caminho_arquivo_temp, caminho_absoluto)
+                try:
+                    shutil.move(caminho_arquivo_temp, caminho_absoluto)
+                except Exception as erro_mv:
+                    print(f"[SDK] shutil.move gerou aviso ({erro_mv}). Aplicando copy2 resiliente...")
+                    shutil.copy2(caminho_arquivo_temp, caminho_absoluto)
+                    try:
+                        os.remove(caminho_arquivo_temp)
+                    except OSError:
+                        pass
                 return True
             else:
-                raise RuntimeError("O arquivo baixado nao foi encontrado no disco apos a conclusao.")
+                raise RuntimeError("O arquivo baixado nao foi encontrado no disco ou possui 0 bytes apos a conclusao.")
 
         finally:
-            _sdk.NET_DVR_StopGetFile(handle)
+            if handle >= 0:
+                try:
+                    _sdk.NET_DVR_StopGetFile(handle)
+                except Exception:
+                    pass
+                handle = -1
 
     finally:
-        _sdk.NET_DVR_Logout_V30(user_id)
+        if fechar_login_local and user_id >= 0:
+            fechar_sessao_sdk(user_id)
+            user_id = -1
         if os.path.exists(caminho_arquivo_temp):
             try:
                 os.remove(caminho_arquivo_temp)

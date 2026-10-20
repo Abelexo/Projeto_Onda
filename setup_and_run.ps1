@@ -3,6 +3,35 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
 
+# Desativa o QuickEdit Mode do console do Windows para evitar que um clique
+# acidental na janela do terminal congele o processo do servidor por dias.
+try {
+    $consoleHelper = @"
+using System;
+using System.Runtime.InteropServices;
+public class ConsoleQuickEdit {
+    const uint ENABLE_QUICK_EDIT = 0x0040;
+    const int STD_INPUT_HANDLE = -10;
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll")]
+    static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [DllImport("kernel32.dll")]
+    static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+    public static void Disable() {
+        IntPtr handle = GetStdHandle(STD_INPUT_HANDLE);
+        uint mode;
+        if (GetConsoleMode(handle, out mode)) {
+            mode &= ~ENABLE_QUICK_EDIT;
+            SetConsoleMode(handle, mode);
+        }
+    }
+}
+"@
+    Add-Type -TypeDefinition $consoleHelper -ErrorAction SilentlyContinue
+    [ConsoleQuickEdit]::Disable()
+} catch { }
+
 $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
 if (-not $pythonCommand) {
     Write-Host "Python 3.10+ nao encontrado no PATH." -ForegroundColor Red
@@ -63,8 +92,20 @@ if (Test-Path $sdkDll) {
 }
 
 $defaultDestination = Join-Path $ProjectRoot "gravacoes"
-$destination = Read-Host "Pasta de destino [$defaultDestination]"
-if ([string]::IsNullOrWhiteSpace($destination)) { $destination = $defaultDestination }
+$savedDestFile = Join-Path $ProjectRoot ".destino_gravacoes"
+if (Test-Path $savedDestFile) {
+    $savedDest = (Get-Content $savedDestFile -Raw).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($savedDest)) {
+        $defaultDestination = $savedDest
+    }
+}
+
+if ($args -contains "--auto" -or -not [Environment]::UserInteractive) {
+    $destination = $defaultDestination
+} else {
+    $destination = Read-Host "Pasta de destino [$defaultDestination]"
+    if ([string]::IsNullOrWhiteSpace($destination)) { $destination = $defaultDestination }
+}
 
 # Validate the path (UNC or local) before using it
 $validPath = $true
@@ -75,15 +116,17 @@ if ($destination -like "\\\\*") {
     }
 }
 if ($validPath) {
-    # Cria a pasta caso ainda não exista
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
     $env:DVR_APP_DESTINO = $destination
+    Set-Content -Path $savedDestFile -Value $destination -Encoding UTF8
 } else {
-    Write-Host "Usando pasta padrão: $defaultDestination" -ForegroundColor Cyan
-    New-Item -ItemType Directory -Force -Path $defaultDestination | Out-Null
-    $env:DVR_APP_DESTINO = $defaultDestination
+    $fallbackDest = Join-Path $ProjectRoot "gravacoes"
+    Write-Host "Usando pasta padrão: $fallbackDest" -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force -Path $fallbackDest | Out-Null
+    $env:DVR_APP_DESTINO = $fallbackDest
 }
 $env:DVR_APP_BANCO = Join-Path $ProjectRoot "dvr_app.db"
+$env:PYTHONUNBUFFERED = "1"
 
 $portBusy = $false
 try {
@@ -100,8 +143,30 @@ $ip = (Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp -ErrorAction Sile
     Select-Object -First 1 -ExpandProperty IPAddress)
 Write-Host "Servidor: http://localhost:5000" -ForegroundColor Green
 if ($ip) { Write-Host "Acesso pela rede: http://$ip`:5000" -ForegroundColor Green }
-Write-Host "Destino: $destination" -ForegroundColor Green
-Write-Host "Iniciando app.py. Use Ctrl+C para parar." -ForegroundColor Cyan
+Write-Host "Destino: $env:DVR_APP_DESTINO" -ForegroundColor Green
+Write-Host "Watchdog de Alta Disponibilidade ATIVO: Se o servidor cair por qualquer motivo, sera reiniciado automaticamente em 5s." -ForegroundColor Cyan
+Write-Host "Iniciando app.py. Use Ctrl+C para parar definitivamente." -ForegroundColor Cyan
 
-& $venvPython (Join-Path $ProjectRoot "app.py")
-exit $LASTEXITCODE
+$watchdogLog = Join-Path $ProjectRoot "servidor_watchdog.log"
+$ErrorActionPreference = "Continue"
+
+while ($true) {
+    $startTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $watchdogLog -Value "[$startTime] Iniciando servidor app.py..."
+    & $venvPython (Join-Path $ProjectRoot "app.py")
+    $exitCode = $LASTEXITCODE
+    $endTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+    # Se foi encerrado voluntariamente (Ctrl+C gera código -1073741510 no Windows ou 0)
+    if ($exitCode -eq 0 -or $exitCode -eq -1073741510 -or $exitCode -eq 130) {
+        Add-Content -Path $watchdogLog -Value "[$endTime] Servidor encerrado manualmente (codigo $exitCode)."
+        Write-Host "Servidor encerrado." -ForegroundColor Yellow
+        break
+    }
+
+    $msg = "[$endTime] ALERTA: O processo app.py encerrou inesperadamente (codigo $exitCode). Reiniciando automaticamente em 5 segundos..."
+    Add-Content -Path $watchdogLog -Value $msg
+    Write-Host $msg -ForegroundColor Yellow
+    Start-Sleep -Seconds 5
+}
+exit 0
