@@ -256,6 +256,8 @@ def preparar_banco():
             ("gravacoes", "atualizado_em", "TEXT"),
             ("escolas", "dvr_usuario", "TEXT DEFAULT 'admin'"),
             ("escolas", "dvr_senha", "TEXT DEFAULT ''"),
+            ("escolas", "dvr_modelo", "TEXT DEFAULT ''"),
+            ("escolas", "dvr_canais", "TEXT DEFAULT ''"),
         ):
             try:
                 banco.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
@@ -1428,17 +1430,26 @@ def buscar_escolas():
     with banco_lock:
         if termo:
             linhas = banco.execute(
-                "SELECT codigo, nome, dvr_ip, cidade FROM escolas "
+                "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais FROM escolas "
                 "WHERE codigo LIKE ? OR nome LIKE ? OR cidade LIKE ? "
                 "ORDER BY nome ASC LIMIT 50",
                 (f"%{termo}%", f"%{termo}%", f"%{termo}%")
             ).fetchall()
         else:
             linhas = banco.execute(
-                "SELECT codigo, nome, dvr_ip, cidade FROM escolas ORDER BY nome ASC"
+                "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais FROM escolas ORDER BY nome ASC"
             ).fetchall()
     return jsonify([
-        {"codigo": l[0], "nome": l[1], "dvr_ip": l[2] or "", "cidade": l[3] or ""}
+        {
+            "codigo": l[0],
+            "nome": l[1],
+            "dvr_ip": l[2] or "",
+            "cidade": l[3] or "",
+            "dvr_usuario": l[4] or "admin",
+            "dvr_senha": l[5] or "",
+            "dvr_modelo": l[6] or "",
+            "dvr_canais": l[7] or "",
+        }
         for l in linhas
     ])
 
@@ -1447,7 +1458,7 @@ def buscar_escolas():
 def obter_escola(codigo):
     with banco_lock:
         linha = banco.execute(
-            "SELECT codigo, nome, dvr_ip, cidade FROM escolas WHERE codigo=?",
+            "SELECT codigo, nome, dvr_ip, cidade, dvr_usuario, dvr_senha, dvr_modelo, dvr_canais FROM escolas WHERE codigo=?",
             (str(codigo).strip(),)
         ).fetchone()
     if not linha:
@@ -1456,7 +1467,11 @@ def obter_escola(codigo):
         "codigo": linha[0],
         "nome": linha[1],
         "dvr_ip": linha[2] or "",
-        "cidade": linha[3] or ""
+        "cidade": linha[3] or "",
+        "dvr_usuario": linha[4] or "admin",
+        "dvr_senha": linha[5] or "",
+        "dvr_modelo": linha[6] or "",
+        "dvr_canais": linha[7] or "",
     })
 
 

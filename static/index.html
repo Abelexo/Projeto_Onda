@@ -31,6 +31,14 @@
     .bolinha-status.online { background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.22); }
     .bolinha-status.offline { background:#dc2626; box-shadow:0 0 0 3px rgba(220,38,38,.2); }
     .bolinha-status.verificando { background:#94a3b8; animation:pulse 1.2s infinite; }
+    .aba-info-dvr { margin-top:12px; padding:11px 13px; background:#f4fbf7; border:1px solid #cce8dc; border-radius:6px; font-family:system-ui,-apple-system,sans-serif; }
+    .aba-info-dvr-titulo { display:flex; justify-content:space-between; align-items:center; font:700 .73rem/1.2 system-ui,sans-serif; text-transform:uppercase; letter-spacing:.05em; color:var(--accent-dark); margin-bottom:8px; }
+    .aba-info-dvr .row label { margin:0 0 4px; font-size:.71rem; }
+    .aba-info-dvr input { min-height:38px; padding:7px 10px; font-size:.88rem; background:#fff; }
+    .chips-canais-ativos { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+    .chip-canal { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:24px; padding:0 7px; border-radius:12px; background:#dcfce7; color:#166534; border:1px solid #86efac; font:700 .75rem/1 system-ui,sans-serif; cursor:pointer; user-select:none; transition:all .15s ease; }
+    .chip-canal:hover { background:#bbf7d0; transform:translateY(-1px); }
+    .chip-canal.selecionado { background:var(--accent); color:#fff; border-color:var(--accent-dark); }
     .layout { display:grid; grid-template-columns:minmax(320px, .9fr) minmax(0, 1.4fr); gap:22px; align-items:start; }
     section { background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px; min-width:0; }
     h2 { margin:0 0 18px; font-size:1.35rem; }
@@ -205,6 +213,26 @@
         <div class="row">
           <div><label for="porta_sdk">Porta SDK</label><input id="porta_sdk" name="porta_sdk" type="number" placeholder="8000" value="8000"></div>
         </div>
+
+        <!-- Aba/Painel de Informações da DVR (Modelo e ao lado Canais Ativos) -->
+        <div id="aba-info-dvr" class="aba-info-dvr">
+          <div class="aba-info-dvr-titulo">
+            <span>📼 Equipamento DVR (Rocket)</span>
+            <span id="status-sync-rocket" style="font-size:.68rem; font-weight:600; color:var(--muted); text-transform:none;">Preenchimento automático</span>
+          </div>
+          <div class="row">
+            <div>
+              <label for="dvr_modelo">Modelo da DVR</label>
+              <input id="dvr_modelo" name="dvr_modelo" placeholder="Ex: DHD - 2208N" readonly title="Modelo do gravador sincronizado do Rocket">
+            </div>
+            <div>
+              <label for="dvr_canais">Canais Ativos</label>
+              <input id="dvr_canais" name="dvr_canais" placeholder="Ex: 1, 2, 3, 4, 5" readonly title="Canais ativos cadastrados no Rocket">
+            </div>
+          </div>
+          <div id="chips-canais-ativos" class="chips-canais-ativos" style="display:none;" title="Clique em um canal ativo para adicionar/remover no campo Câmeras"></div>
+        </div>
+
         <div class="row">
           <div><label for="usuario">Usuario</label><input id="usuario" name="usuario" required value="admin"></div>
           <div><label for="senha">Senha</label><input id="senha" name="senha" type="password" required></div>
@@ -665,10 +693,72 @@
   const inputCodigo = document.querySelector('#codigo_escola');
   const inputEscola = document.querySelector('#escola');
   const inputIp = document.querySelector('#dvr_ip');
+  const inputUsuario = document.querySelector('#usuario');
+  const inputSenha = document.querySelector('#senha');
+  const inputCameras = document.querySelector('#cameras');
+  const inputModeloDvr = document.querySelector('#dvr_modelo');
+  const inputCanaisDvr = document.querySelector('#dvr_canais');
+  const containerChipsCanais = document.querySelector('#chips-canais-ativos');
+  const statusSyncRocket = document.querySelector('#status-sync-rocket');
   const listaCodigos = document.querySelector('#lista_codigos');
   const listaNomes = document.querySelector('#lista_nomes');
   let mapaEscolasPorCodigo = new Map();
   let mapaEscolasPorNome = new Map();
+
+  function renderizarChipsCanais(canaisTextoOuLista) {
+    if (!containerChipsCanais) return;
+    let lista = [];
+    if (Array.isArray(canaisTextoOuLista)) {
+      lista = canaisTextoOuLista.map(c => String(c).trim()).filter(Boolean);
+    } else if (typeof canaisTextoOuLista === 'string' && canaisTextoOuLista.trim()) {
+      lista = canaisTextoOuLista.split(',').map(c => c.trim()).filter(Boolean);
+    }
+    if (!lista.length) {
+      containerChipsCanais.style.display = 'none';
+      containerChipsCanais.innerHTML = '';
+      return;
+    }
+    const selecionados = new Set(
+      (inputCameras?.value || '').split(',').map(c => c.trim()).filter(Boolean)
+    );
+    containerChipsCanais.style.display = 'flex';
+    containerChipsCanais.innerHTML =
+      `<small style="width:100%; font-size:.7rem; color:var(--muted); margin-bottom:2px;">Clique nos canais ativos para selecionar no download:</small>` +
+      lista.map(ch => `
+        <span class="chip-canal ${selecionados.has(ch) ? 'selecionado' : ''}" data-canal="${ch}">
+          Cam ${ch}
+        </span>
+      `).join('') +
+      `<span class="chip-canal" data-canal="TODOS" style="background:#e0f2fe; color:#0369a1; border-color:#7dd3fc;">Todos (${lista.join(',')})</span>`;
+  }
+
+  containerChipsCanais?.addEventListener('click', ev => {
+    const chip = ev.target.closest('.chip-canal');
+    if (!chip || !inputCameras) return;
+    const ch = chip.dataset.canal;
+    const canaisDisp = (inputCanaisDvr?.value || '').split(',').map(c => c.trim()).filter(Boolean);
+    if (ch === 'TODOS') {
+      inputCameras.value = canaisDisp.join(',');
+      renderizarChipsCanais(canaisDisp);
+      return;
+    }
+    const atuais = inputCameras.value.split(',').map(c => c.trim()).filter(Boolean);
+    const idx = atuais.indexOf(ch);
+    if (idx >= 0) {
+      atuais.splice(idx, 1);
+    } else {
+      atuais.push(ch);
+    }
+    atuais.sort((a, b) => Number(a) - Number(b));
+    inputCameras.value = atuais.join(',');
+    renderizarChipsCanais(canaisDisp);
+  });
+
+  inputCameras?.addEventListener('input', () => {
+    if (inputCanaisDvr?.value) {
+      renderizarChipsCanais(inputCanaisDvr.value);
+    }
+  });
 
   async function carregarCatalogoEscolas() {
     try {
@@ -797,6 +887,12 @@
     if (!item) return;
     if (item.codigo) inputCodigo.value = item.codigo;
     if (item.nome) inputEscola.value = item.nome;
+    if (item.dvr_usuario && inputUsuario) inputUsuario.value = item.dvr_usuario;
+    if (item.dvr_senha && inputSenha) inputSenha.value = item.dvr_senha;
+    if (inputModeloDvr) inputModeloDvr.value = item.dvr_modelo || '';
+    if (inputCanaisDvr) inputCanaisDvr.value = item.dvr_canais || '';
+    renderizarChipsCanais(item.dvr_canais || '');
+
     if (item.dvr_ip) {
       inputIp.value = item.dvr_ip;
       mensagem.style.color = 'var(--accent-dark)';
@@ -804,7 +900,7 @@
     } else {
       inputIp.value = '';
       mensagem.style.color = 'var(--muted)';
-      mensagem.textContent = `Escola ${item.nome} selecionada. Digite o IP da DVR abaixo.`;
+      mensagem.textContent = `Escola ${item.nome} selecionada. Buscando dados completos no Rocket...`;
     }
     agendarVerificacaoStatusDvr(80);
   }
@@ -812,47 +908,97 @@
   let timerBuscaRocket = null;
   async function tentarAutocompletarViaRocketLocal(cod) {
     if (!cod || cod.length < 2) return;
+    if (statusSyncRocket) {
+      statusSyncRocket.style.color = 'var(--warn)';
+      statusSyncRocket.textContent = '🔄 Sincronizando com o Rocket...';
+    }
     try {
       const res = await fetch(`/api/rocket/buscar/${encodeURIComponent(cod)}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (statusSyncRocket) {
+          statusSyncRocket.style.color = 'var(--muted)';
+          statusSyncRocket.textContent = 'Preenchimento automático';
+        }
+        return;
+      }
       const dados = await res.json();
-      if (!dados || !dados.sucesso) return;
+      if (!dados || !dados.sucesso) {
+        if (statusSyncRocket) {
+          statusSyncRocket.style.color = 'var(--muted)';
+          statusSyncRocket.textContent = 'Unidade não localizada no Rocket';
+        }
+        return;
+      }
       if (inputCodigo.value.trim() !== cod) return;
-      if (dados.nome && !inputEscola.value.trim()) {
-        inputEscola.value = dados.nome;
+
+      if (dados.nome) inputEscola.value = dados.nome;
+      if (dados.dvr_ip) inputIp.value = dados.dvr_ip;
+      if (dados.usuario && inputUsuario) inputUsuario.value = dados.usuario;
+      if (dados.senha && inputSenha) inputSenha.value = dados.senha;
+      if (inputModeloDvr) inputModeloDvr.value = dados.modelo_dvr || '';
+      const canaisStr = Array.isArray(dados.canais_ativos)
+        ? dados.canais_ativos.join(', ')
+        : (dados.canais_ativos || '');
+      if (inputCanaisDvr) inputCanaisDvr.value = canaisStr;
+      renderizarChipsCanais(dados.canais_ativos || []);
+
+      if (statusSyncRocket) {
+        statusSyncRocket.style.color = 'var(--accent-dark)';
+        statusSyncRocket.textContent = '✅ Sincronizado e salvo no banco!';
       }
-      if (dados.dvr_ip && !inputIp.value.trim()) {
-        inputIp.value = dados.dvr_ip;
-        mensagem.style.color = 'var(--accent-dark)';
-        mensagem.textContent = `Dados sincronizados automaticamente do Rocket 🚀 (${dados.nome || cod} - IP: ${dados.dvr_ip})`;
-      }
+      mensagem.style.color = 'var(--accent-dark)';
+      mensagem.textContent = `Dados puxados do Rocket 🚀 e salvos no banco: ${dados.nome || cod} | IP: ${dados.dvr_ip || '-'} | Modelo: ${dados.modelo_dvr || '-'}`;
+
       await carregarCatalogoEscolas();
       agendarVerificacaoStatusDvr(50);
     } catch {
-      // Módulo local do Rocket ausente ou desconectado; segue funcionamento normal
+      if (statusSyncRocket) {
+        statusSyncRocket.style.color = 'var(--muted)';
+        statusSyncRocket.textContent = 'Preenchimento automático';
+      }
     }
+  }
+
+  function escolaPrecisaComplementarNoRocket(item) {
+    if (!item) return true;
+    return !item.dvr_ip || !item.dvr_senha || !item.dvr_modelo || !item.dvr_canais;
   }
 
   inputCodigo.addEventListener('input', () => {
     const cod = inputCodigo.value.trim();
+    if (!cod) {
+      if (inputModeloDvr) inputModeloDvr.value = '';
+      if (inputCanaisDvr) inputCanaisDvr.value = '';
+      renderizarChipsCanais([]);
+      if (painelUnidadeRocket) painelUnidadeRocket.style.display = 'none';
+      return;
+    }
     if (mapaEscolasPorCodigo.has(cod)) {
       const item = mapaEscolasPorCodigo.get(cod);
       aplicarEscola(item);
-      if (!item.dvr_ip) {
+      if (escolaPrecisaComplementarNoRocket(item)) {
         clearTimeout(timerBuscaRocket);
-        timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 450);
+        timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 350);
+      } else if (statusSyncRocket) {
+        statusSyncRocket.style.color = 'var(--accent-dark)';
+        statusSyncRocket.textContent = '✅ Dados completos no banco';
       }
     } else {
       agendarVerificacaoStatusDvr(300);
       clearTimeout(timerBuscaRocket);
-      timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 500);
+      timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(cod), 400);
     }
   });
 
   inputEscola.addEventListener('input', () => {
     const nm = inputEscola.value.trim().toLowerCase();
     if (mapaEscolasPorNome.has(nm)) {
-      aplicarEscola(mapaEscolasPorNome.get(nm));
+      const item = mapaEscolasPorNome.get(nm);
+      aplicarEscola(item);
+      if (escolaPrecisaComplementarNoRocket(item) && item.codigo) {
+        clearTimeout(timerBuscaRocket);
+        timerBuscaRocket = setTimeout(() => tentarAutocompletarViaRocketLocal(item.codigo), 350);
+      }
     } else if (inputCodigo.value.trim()) {
       agendarVerificacaoStatusDvr(300);
     }
