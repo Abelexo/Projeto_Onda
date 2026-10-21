@@ -20,6 +20,47 @@ if (Test-Path $sdkDll) {
 $venvPath = Join-Path $ProjectRoot ".venv"
 $venvPython = Join-Path $venvPath "Scripts\python.exe"
 
+function Find-Python32 {
+    # 1. Tenta pelo launcher py oficial do Windows
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        try {
+            $bits = & py -3-32 -c "import struct; print(struct.calcsize('P')*8)" 2>$null
+            if ($bits -match "32") { return "py -3-32" }
+        } catch { }
+        try {
+            $bits = & py -32 -c "import struct; print(struct.calcsize('P')*8)" 2>$null
+            if ($bits -match "32") { return "py -32" }
+        } catch { }
+    }
+
+    # 2. Varre pastas padrao onde o Python 32-bit e instalado no Windows
+    $localApp = [Environment]::GetFolderPath("LocalApplicationData")
+    $progFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+    $candidates = @(
+        "$localApp\Programs\Python\Python*-32\python.exe",
+        "$localApp\Programs\Python\Python3*\python.exe",
+        "$localApp\Python\pythoncore-*-32\python.exe",
+        "$localApp\Python\pythoncore-*\python.exe",
+        "$progFilesX86\Python*\python.exe",
+        "C:\Program Files (x86)\Python*\python.exe",
+        "C:\Python*-32\python.exe",
+        "C:\Python3*\python.exe"
+    )
+    foreach ($pattern in $candidates) {
+        $found = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue
+        foreach ($f in $found) {
+            try {
+                $bits = & $f.FullName -c "import struct; print(struct.calcsize('P')*8)" 2>$null
+                if ($bits -match "32") {
+                    return $f.FullName
+                }
+            } catch { }
+        }
+    }
+    return $null
+}
+
 # Se as DLLs forem 32-bit (como as originais do WD-Desk V2), o Python DEVE ser 32-bit
 if ($isSdk32) {
     Write-Host "[SDK Arquitetura] DLLs detectadas: 32-bit (x86 do WD-DESK V2)." -ForegroundColor Cyan
@@ -27,16 +68,8 @@ if ($isSdk32) {
     $venvPython = Join-Path $venvPath "Scripts\python.exe"
 
     if (-not (Test-Path $venvPython)) {
-        # Procura se o launcher py.exe tem um Python 32-bit instalado
-        $pyCmd = $null
-        $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
-        if ($pyLauncher) {
-            $pyList = & py -0p 2>&1
-            if ($pyList -match "-3\.\d+-32") {
-                $pyCmd = "py -3-32"
-            }
-        }
-        if (-not $pyCmd) {
+        $py32Target = Find-Python32
+        if (-not $py32Target) {
             Write-Host "==========================================================================" -ForegroundColor Yellow
             Write-Host "AVISO: As DLLs do WD-Desk V2 sao 32-bit (x86). Para o SDK carregar no Windows," -ForegroundColor Yellow
             Write-Host "e necessario ter o Python 32-bit instalado lado a lado com o 64-bit." -ForegroundColor Yellow
@@ -48,8 +81,14 @@ if ($isSdk32) {
             Write-Host "==========================================================================" -ForegroundColor Yellow
             exit 1
         }
+        Write-Host "Python 32-bit localizado: $py32Target" -ForegroundColor Green
         Write-Host "Criando ambiente virtual 32-bit (.venv32)..." -ForegroundColor Cyan
-        & py -3-32 -m venv $venvPath
+        if ($py32Target -like "py *") {
+            $parts = $py32Target.Split(" ")
+            & $parts[0] $parts[1] -m venv $venvPath
+        } else {
+            & $py32Target -m venv $venvPath
+        }
         if ($LASTEXITCODE -ne 0) { throw "Falha ao criar .venv32" }
     }
 } else {
