@@ -47,6 +47,10 @@ def obter_arquitetura_pe(caminho_dll):
 
 # Pastas comuns de instalação do WD-Desk V2 e iVMS-4200 no Windows
 SUBPASTAS_CANDIDATAS = [
+    r"wdesk v2 client",
+    r"wdesk v2\client",
+    r"wdesk v2",
+    r"wdesk",
     r"WD-DESK V2",
     r"WD-DESK V2\Client",
     r"WD-Desk V2",

@@ -268,6 +268,10 @@ def carregar_sdk():
             ]
             for b in bases_prog:
                 for s in [
+                    r"wdesk v2 client",
+                    r"wdesk v2\client",
+                    r"wdesk v2",
+                    r"wdesk",
                     r"WD-DESK V2",
                     r"WD-DESK V2\Client",
                     r"WD-Desk V2",
