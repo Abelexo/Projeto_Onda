@@ -219,17 +219,27 @@ def _obter_caminho_curto_win(caminho):
     evitando que a DLL em C++ (HCNetSDK.dll / HCCore.dll) falhe ao localizar subpastas
     ou criar arquivos locais.
     """
-    if sys.platform == "win32" and caminho and os.path.exists(caminho):
+    if sys.platform == "win32" and caminho:
         try:
             from ctypes import wintypes
             _GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
             _GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
             _GetShortPathNameW.restype = wintypes.DWORD
 
-            buf = ctypes.create_unicode_buffer(1024)
-            tam = _GetShortPathNameW(caminho, buf, 1024)
-            if tam > 0:
-                return buf.value
+            # Se o arquivo/pasta já existe
+            if os.path.exists(caminho):
+                buf = ctypes.create_unicode_buffer(1024)
+                tam = _GetShortPathNameW(caminho, buf, 1024)
+                if tam > 0:
+                    return buf.value
+
+            # Se ainda não existe fisicamente, converte o diretório pai que existe
+            pasta_pai = os.path.dirname(caminho)
+            if pasta_pai and os.path.exists(pasta_pai):
+                buf = ctypes.create_unicode_buffer(1024)
+                tam = _GetShortPathNameW(pasta_pai, buf, 1024)
+                if tam > 0:
+                    return os.path.join(buf.value, os.path.basename(caminho))
         except Exception:
             pass
     return caminho
@@ -358,6 +368,13 @@ def carregar_sdk():
 
         _sdk.NET_DVR_GetDownloadPos.argtypes = [c_int]
         _sdk.NET_DVR_GetDownloadPos.restype = c_int
+
+        if hasattr(_sdk, "NET_DVR_GetDownloadState"):
+            try:
+                _sdk.NET_DVR_GetDownloadState.argtypes = [c_int, POINTER(c_uint)]
+                _sdk.NET_DVR_GetDownloadState.restype = c_int
+            except Exception:
+                pass
 
         _sdk.NET_DVR_StopGetFile.argtypes = [c_int]
         _sdk.NET_DVR_StopGetFile.restype = c_int
@@ -735,20 +752,7 @@ def baixar_por_tempo_sdk(
     pasta_destino = os.path.dirname(caminho_absoluto)
     os.makedirs(pasta_destino, exist_ok=True)
 
-    # O arquivo temporario durante o download do SDK e gravado OBRIGATORIAMENTE
-    # no disco local (tempfile.gettempdir(), ex: C:\\Users\\...\\AppData\\Local\\Temp).
-    # Inclui timestamp em milissegundos e ID da thread para permitir multiplos downloads simultaneos sem colisao!
-    import threading
-    pasta_temp_local = tempfile.gettempdir()
-    timestamp_tmp = int(time.time() * 1000)
-    tid = threading.get_ident()
-    nome_arquivo_temp = f"hksdk_tmp_{timestamp_tmp}_{tid}_cam{camera}.hik"
-    caminho_arquivo_temp = os.path.join(pasta_temp_local, nome_arquivo_temp)
-
-    # Converte caminho temporario para 8.3 seguro no Windows
-    caminho_salvar_sdk = _obter_caminho_curto_win(caminho_arquivo_temp)
-    bytes_caminho = caminho_salvar_sdk.encode(sys.getfilesystemencoding() or "utf-8", errors="replace")
-
+    caminho_arquivo_temp = None
     try:
         t_inicio = NET_DVR_TIME(
             inicio_dt.year, inicio_dt.month, inicio_dt.day,
@@ -762,178 +766,212 @@ def baixar_por_tempo_sdk(
         canais_candidatos = _determinar_canais_candidatos(camera, dev_info)
         print(f"[SDK] Solicitando download camera {camera}. Canais SDK candidatos: {canais_candidatos}")
 
-        handle = -1
         ultimo_erro_canal = 0
-        canal_utilizado = -1
         erros_canais = []
+
+        dur_seg = max(1.0, (fim_dt - inicio_dt).total_seconds())
+        tam_estimado = max(5 * 1024 * 1024, int(dur_seg * 250_000))
+
+        # Pasta temporária dedicada no disco local
+        pasta_temp_base = os.path.join(tempfile.gettempdir(), "onda_sdk")
+        os.makedirs(pasta_temp_base, exist_ok=True)
+        pasta_temp_curta = _obter_caminho_curto_win(pasta_temp_base)
 
         for c_cand in canais_candidatos:
             if checar_cancelado and checar_cancelado():
                 return False
+
+            timestamp_tmp = int(time.time() * 1000)
+            tid = threading.get_ident()
+            nome_arquivo_temp = f"dl_cam{camera}_ch{c_cand}_{timestamp_tmp}_{tid}.mp4"
+            caminho_arquivo_temp = os.path.join(pasta_temp_curta, nome_arquivo_temp)
+
+            # Garante que o arquivo existe vazio para gerar caminho 8.3 seguro
+            try:
+                with open(caminho_arquivo_temp, "wb"):
+                    pass
+                caminho_salvar_sdk = _obter_caminho_curto_win(caminho_arquivo_temp)
+            except Exception:
+                caminho_salvar_sdk = caminho_arquivo_temp
+
+            bytes_caminho = caminho_salvar_sdk.encode("ascii" if sys.platform == "win32" else "utf-8", errors="replace")
 
             print(f"[SDK] Tentando iniciar download no canal {c_cand} ({inicio_dt.strftime('%H:%M:%S')} ate {fim_dt.strftime('%H:%M:%S')})...")
             h = _sdk.NET_DVR_GetFileByTime(
                 user_id, c_cand, byref(t_inicio), byref(t_fim), bytes_caminho
             )
 
-            if h >= 0:
-                # OBRIGATORIO: no HCNetSDK e mandatorio chamar PlayBackControl(PLAYSTART)
-                # para que o dispositivo inicie efetivamente o envio do fluxo!
-                # Sem isso, GetDownloadPos retorna -1 e gera erro 11 (NET_DVR_NETWORK_ERRORDATA).
-                iniciou = True
-                if hasattr(_sdk, "NET_DVR_PlayBackControl"):
-                    iniciou = _sdk.NET_DVR_PlayBackControl(h, NET_DVR_PLAYSTART, 0, None)
-                    if not iniciou:
-                        cod_ctrl = _sdk.NET_DVR_GetLastError()
-                        print(f"[SDK] Aviso: PlayBackControl(PLAYSTART) retornou {iniciou} ({formatar_erro_sdk(cod_ctrl)})")
-
-                handle = h
-                canal_utilizado = c_cand
-                print(f"[SDK] Sucesso ao abrir canal {c_cand} (Handle: {handle}). Transmissao iniciada.")
-                break
-            else:
+            if h < 0:
                 ultimo_erro_canal = _sdk.NET_DVR_GetLastError()
                 erros_canais.append(ultimo_erro_canal)
-                print(f"[SDK] Canal {c_cand} falhou com {formatar_erro_sdk(ultimo_erro_canal)}. Tentando proximo canal...")
-
-        if handle < 0:
-            if erros_canais and all(e == 4 for e in erros_canais):
-                raise CameraInvalidaError(
-                    f"Câmera {camera} inválida ou inexistente nesta DVR (código 4: NET_DVR_CHANNEL_ERROR nos canais {canais_candidatos})."
-                )
-            if ultimo_erro_canal == 34:
-                raise RuntimeError(
-                    f"Nenhuma gravação encontrada na DVR para a câmera {camera} no período solicitado ({inicio_dt.strftime('%d/%m/%Y %H:%M')} até {fim_dt.strftime('%H:%M')})."
-                )
-            raise RuntimeError(
-                f"NET_DVR_GetFileByTime falhou para camera {camera} em todos os canais ({canais_candidatos}) - {formatar_erro_sdk(ultimo_erro_canal)}"
-            )
-
-        try:
-            # Monitoramento do progresso da transmissao com watchdog anti-travamento
-            tempo_inicio = time.time()
-            tentativas_iniciais_negativas = 0
-            ultimo_pos = -1
-            ultimo_avanco = time.time()
-
-            while True:
-                if checar_cancelado and checar_cancelado():
-                    if handle >= 0:
-                        _sdk.NET_DVR_StopGetFile(handle)
-                        handle = -1
-                    if os.path.exists(caminho_arquivo_temp):
-                        try:
-                            os.remove(caminho_arquivo_temp)
-                        except OSError:
-                            pass
-                    return False
-
-                pos = _sdk.NET_DVR_GetDownloadPos(handle)
-
-                if pos == 100:
-                    if callback_progresso:
-                        callback_progresso(100)
-                    print(f"[SDK] Download concluido com 100% no canal {canal_utilizado}.")
-                    # Fecha o handle na DLL imediatamente para descarregar o buffer e liberar o arquivo no Windows!
-                    _sdk.NET_DVR_StopGetFile(handle)
-                    handle = -1
-                    break
-
-                elif pos < 0 or pos > 100:
-                    # Durante os primeiros 3 segundos, o buffer pode demorar a sincronizar
-                    if time.time() - tempo_inicio < 4.0 and tentativas_iniciais_negativas < 4:
-                        tentativas_iniciais_negativas += 1
-                        time.sleep(1)
-                        continue
-
-                    # Se a DVR encerrou a conexão (código 200 de término/exceção ou pos < 0),
-                    # mas o download já estava em >= 90% e o arquivo tem dados substanciais:
-                    tam_baixado = os.path.getsize(caminho_arquivo_temp) if os.path.exists(caminho_arquivo_temp) else 0
-                    if (ultimo_pos >= 90 or pos == 200) and tam_baixado > 1024 * 1024:
-                        print(f"[SDK] Aviso: DVR encerrou canal (pos: {pos}, ultimo_pos: {ultimo_pos}%), arquivo com {tam_baixado} bytes. Concluindo normalmente.")
-                        if callback_progresso:
-                            callback_progresso(100)
-                        _sdk.NET_DVR_StopGetFile(handle)
-                        handle = -1
-                        break
-
-                    cod_erro_pos = _sdk.NET_DVR_GetLastError()
-                    if handle >= 0:
-                        _sdk.NET_DVR_StopGetFile(handle)
-                        handle = -1
-                    raise RuntimeError(
-                        f"Download SDK falhou durante transmissao (posicao: {pos}, {formatar_erro_sdk(cod_erro_pos)})"
-                    )
-
-                if pos > ultimo_pos:
-                    ultimo_pos = pos
-                    ultimo_avanco = time.time()
-                elif pos == 0 and (time.time() - tempo_inicio > 20.0):
-                    # Se após 20s a DVR conectou mas não enviou nenhum fluxo de dados
-                    if handle >= 0:
-                        _sdk.NET_DVR_StopGetFile(handle)
-                        handle = -1
-                    raise RuntimeError("Timeout no download SDK: a DVR abriu o canal mas não transmitiu fluxo de vídeo após 20s.")
-                elif time.time() - ultimo_avanco > 60.0:
-                    # Se a transmissão congelou na mesma porcentagem por mais de 60s
-                    tam_baixado = os.path.getsize(caminho_arquivo_temp) if os.path.exists(caminho_arquivo_temp) else 0
-                    if ultimo_pos >= 90 and tam_baixado > 1024 * 1024:
-                        print(f"[SDK] Transmissão estagnou em {pos}%, mas já possui {tam_baixado} bytes gravados. Concluindo.")
-                        if handle >= 0:
-                            _sdk.NET_DVR_StopGetFile(handle)
-                            handle = -1
-                        break
-                    if handle >= 0:
-                        _sdk.NET_DVR_StopGetFile(handle)
-                        handle = -1
-                    raise RuntimeError(f"Timeout no download SDK: transmissão congelada em {pos}% por mais de 60s.")
-
-                if callback_progresso and pos >= 0:
-                    callback_progresso(pos)
-
-                time.sleep(1)
-
-            # Garante que o handle foi fechado
-            if handle >= 0:
-                _sdk.NET_DVR_StopGetFile(handle)
-                handle = -1
-
-            # Pausa breve para o sistema de arquivos do Windows liberar o lock de escrita
-            time.sleep(0.3)
-
-            # Move o arquivo temporario da pasta temp local para o destino final definitivo
-            if os.path.exists(caminho_arquivo_temp) and os.path.getsize(caminho_arquivo_temp) > 0:
-                if os.path.exists(caminho_absoluto):
-                    try:
-                        os.remove(caminho_absoluto)
-                    except OSError:
-                        pass
-                try:
-                    shutil.move(caminho_arquivo_temp, caminho_absoluto)
-                except Exception as erro_mv:
-                    print(f"[SDK] shutil.move gerou aviso ({erro_mv}). Aplicando copy2 resiliente...")
-                    shutil.copy2(caminho_arquivo_temp, caminho_absoluto)
+                print(f"[SDK] Canal {c_cand} falhou ao abrir: {formatar_erro_sdk(ultimo_erro_canal)}. Tentando proximo candidato...")
+                if os.path.exists(caminho_arquivo_temp):
                     try:
                         os.remove(caminho_arquivo_temp)
                     except OSError:
                         pass
-                return True
-            else:
-                raise RuntimeError("O arquivo baixado nao foi encontrado no disco ou possui 0 bytes apos a conclusao.")
+                continue
 
-        finally:
-            if handle >= 0:
+            # Inicia fluxo com PlayBackControl
+            if hasattr(_sdk, "NET_DVR_PlayBackControl"):
+                iniciou = _sdk.NET_DVR_PlayBackControl(h, NET_DVR_PLAYSTART, 0, None)
+                if not iniciou:
+                    cod_ctrl = _sdk.NET_DVR_GetLastError()
+                    print(f"[SDK] Aviso: PlayBackControl(PLAYSTART) canal {c_cand} retornou {iniciou} ({formatar_erro_sdk(cod_ctrl)})")
+
+            print(f"[SDK] Sucesso ao abrir canal {c_cand} (Handle: {h}). Monitorando transmissao...")
+
+            # Monitoramento da transmissao do canal c_cand
+            tempo_inicio_canal = time.time()
+            ultimo_pos = -1
+            ultimo_tam = 0
+            ultimo_avanco = time.time()
+            ultimo_log = time.time()
+            sucesso_canal = False
+
+            try:
+                while True:
+                    if checar_cancelado and checar_cancelado():
+                        if h >= 0:
+                            _sdk.NET_DVR_StopGetFile(h)
+                            h = -1
+                        return False
+
+                    pos = _sdk.NET_DVR_GetDownloadPos(h)
+                    tam_atual = os.path.getsize(caminho_arquivo_temp) if os.path.exists(caminho_arquivo_temp) else 0
+
+                    # 1. Conclusao oficial da DVR via pos=100
+                    if pos == 100:
+                        print(f"[SDK] Download concluido com 100% no canal {c_cand} ({tam_atual / (1024*1024):.2f} MB).")
+                        if callback_progresso:
+                            callback_progresso(100)
+                        _sdk.NET_DVR_StopGetFile(h)
+                        h = -1
+                        sucesso_canal = True
+                        break
+
+                    # 2. Status de excecao ou encerramento (pos 200 ou pos < 0)
+                    elif pos < 0 or pos > 100:
+                        # Durante os primeiros 3 segundos, o buffer pode sincronizar
+                        if time.time() - tempo_inicio_canal < 3.0:
+                            time.sleep(1)
+                            continue
+
+                        # Se a DVR encerrou a conexao (codigo 200 de termino ou pos < 0),
+                        # mas o arquivo ja tem dados substanciais e avancou bastante:
+                        if (ultimo_pos >= 85 or pos == 200) and tam_atual > 1024 * 1024:
+                            print(f"[SDK] Aviso: DVR encerrou transmissao canal {c_cand} (pos: {pos}, arquivo: {tam_atual / (1024*1024):.2f} MB). Concluindo.")
+                            if callback_progresso:
+                                callback_progresso(100)
+                            _sdk.NET_DVR_StopGetFile(h)
+                            h = -1
+                            sucesso_canal = True
+                            break
+
+                        cod_erro_pos = _sdk.NET_DVR_GetLastError()
+                        print(f"[SDK] Canal {c_cand} interrompido (pos={pos}, {formatar_erro_sdk(cod_erro_pos)}).")
+                        _sdk.NET_DVR_StopGetFile(h)
+                        h = -1
+                        break
+
+                    # 3. Detecta avanco nos bytes ou na porcentagem
+                    if tam_atual > ultimo_tam:
+                        ultimo_tam = tam_atual
+                        ultimo_avanco = time.time()
+                    if pos > ultimo_pos:
+                        ultimo_pos = pos
+                        ultimo_avanco = time.time()
+
+                    # Atualiza callback de progresso suave
+                    if callback_progresso:
+                        if pos > 0:
+                            callback_progresso(pos)
+                        elif tam_atual > 0:
+                            pct_estimada = min(99, int((tam_atual / tam_estimado) * 100))
+                            callback_progresso(pct_estimada)
+
+                    # Log periodico a cada 4 segundos
+                    if time.time() - ultimo_log >= 4.0:
+                        ultimo_log = time.time()
+                        mb_atual = tam_atual / (1024 * 1024)
+                        print(f"[SDK] Canal {c_cand}: pos={pos}%, {mb_atual:.2f} MB baixados...")
+
+                    # 4. Watchdog anti-canal-vazio:
+                    # Se nos primeiros 20s o arquivo continua com 0 bytes e pos continua 0:
+                    outros_candidatos = [c for c in canais_candidatos if c != c_cand]
+                    if tam_atual == 0 and pos == 0:
+                        tempo_limite_sem_dados = 20.0 if outros_candidatos else 45.0
+                        if time.time() - tempo_inicio_canal > tempo_limite_sem_dados:
+                            print(f"[SDK] Canal {c_cand} nao transmitiu nenhum dado apos {tempo_limite_sem_dados:.0f}s (0 bytes).")
+                            _sdk.NET_DVR_StopGetFile(h)
+                            h = -1
+                            break
+
+                    # 5. Watchdog anti-congelamento: se ja tinha dados mas congelou ha mais de 60s
+                    elif time.time() - ultimo_avanco > 60.0:
+                        if ultimo_pos >= 85 and tam_atual > 1024 * 1024:
+                            print(f"[SDK] Transmissão estagnou em {pos}%, mas já possui {tam_atual / (1024*1024):.2f} MB. Concluindo.")
+                            _sdk.NET_DVR_StopGetFile(h)
+                            h = -1
+                            sucesso_canal = True
+                            break
+                        print(f"[SDK] Canal {c_cand} congelou na transmissao por mais de 60s.")
+                        _sdk.NET_DVR_StopGetFile(h)
+                        h = -1
+                        break
+
+                    time.sleep(1)
+
+            finally:
+                if h >= 0:
+                    try:
+                        _sdk.NET_DVR_StopGetFile(h)
+                    except Exception:
+                        pass
+                    h = -1
+
+            if sucesso_canal:
+                time.sleep(0.3)
+                if os.path.exists(caminho_arquivo_temp) and os.path.getsize(caminho_arquivo_temp) > 0:
+                    if os.path.exists(caminho_absoluto):
+                        try:
+                            os.remove(caminho_absoluto)
+                        except OSError:
+                            pass
+                    try:
+                        shutil.move(caminho_arquivo_temp, caminho_absoluto)
+                    except Exception as erro_mv:
+                        shutil.copy2(caminho_arquivo_temp, caminho_absoluto)
+                        try:
+                            os.remove(caminho_arquivo_temp)
+                        except OSError:
+                            pass
+                    return True
+
+            # Se este canal nao transmitiu ou falhou, remove o temporario e tenta o proximo
+            if os.path.exists(caminho_arquivo_temp):
                 try:
-                    _sdk.NET_DVR_StopGetFile(handle)
-                except Exception:
+                    os.remove(caminho_arquivo_temp)
+                except OSError:
                     pass
-                handle = -1
+
+        if erros_canais and all(e == 4 for e in erros_canais):
+            raise CameraInvalidaError(
+                f"Câmera {camera} inválida ou inexistente nesta DVR (código 4: NET_DVR_CHANNEL_ERROR nos canais {canais_candidatos})."
+            )
+        if ultimo_erro_canal == 34:
+            raise RuntimeError(
+                f"Nenhuma gravação encontrada na DVR para a câmera {camera} no período solicitado ({inicio_dt.strftime('%d/%m/%Y %H:%M')} até {fim_dt.strftime('%H:%M')})."
+            )
+        raise RuntimeError(
+            f"Download SDK não obteve fluxo de vídeo para a câmera {camera} nos canais {canais_candidatos}."
+        )
 
     finally:
         if fechar_login_local and user_id >= 0:
             fechar_sessao_sdk(user_id)
             user_id = -1
-        if os.path.exists(caminho_arquivo_temp):
+        if caminho_arquivo_temp and os.path.exists(caminho_arquivo_temp):
             try:
                 os.remove(caminho_arquivo_temp)
             except OSError:
