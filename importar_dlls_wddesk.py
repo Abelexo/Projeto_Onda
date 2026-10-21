@@ -17,10 +17,33 @@ Por que isso é necessário?
 import os
 import sys
 import shutil
+import struct
 
 PASTA_PROJETO = os.path.dirname(os.path.abspath(__file__))
 PASTA_SDK_DESTINO = os.path.join(PASTA_PROJETO, "sdk_dlls")
 PASTA_COM_DESTINO = os.path.join(PASTA_SDK_DESTINO, "HCNetSDKCom")
+
+
+def obter_arquitetura_pe(caminho_dll):
+    """Lê o cabeçalho PE da DLL e retorna se ela é 64-bit (x64) ou 32-bit (x86)."""
+    try:
+        with open(caminho_dll, "rb") as f:
+            cab = f.read(1024)
+            if cab[:2] != b"MZ":
+                return "desconhecido"
+            pe_offset = struct.unpack("<I", cab[0x3C:0x40])[0]
+            f.seek(pe_offset)
+            pe_sig = f.read(4)
+            if pe_sig != b"PE\x00\x00":
+                return "desconhecido"
+            machine = struct.unpack("<H", f.read(2))[0]
+            if machine == 0x8664:
+                return "64-bit (x64)"
+            elif machine == 0x14C:
+                return "32-bit (x86)"
+            return f"outro ({hex(machine)})"
+    except Exception:
+        return "desconhecido"
 
 # Pastas comuns de instalação do WD-Desk V2 e iVMS-4200 no Windows
 SUBPASTAS_CANDIDATAS = [
@@ -69,9 +92,12 @@ def encontrar_instalacoes_suporte():
 
 
 def copiar_dlls(pasta_origem):
+    dll_check = os.path.join(pasta_origem, "HCNetSDK.dll")
+    arq = obter_arquitetura_pe(dll_check) if os.path.isfile(dll_check) else "desconhecido"
     print("=" * 76)
-    print(f"📦 Copiando DLLs de: {pasta_origem}")
-    print(f"📂 Para: {PASTA_SDK_DESTINO}")
+    print(f"📦 Origem das DLLs : {pasta_origem}")
+    print(f"⚙️  Arquitetura     : {arq}")
+    print(f"📂 Pasta de destino: {PASTA_SDK_DESTINO}")
     print("=" * 76)
 
     os.makedirs(PASTA_SDK_DESTINO, exist_ok=True)
