@@ -3,47 +3,66 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
 
-# Desativa o QuickEdit Mode do console do Windows para evitar que um clique
-# acidental na janela do terminal congele o processo do servidor por dias.
-try {
-    $consoleHelper = @"
-using System;
-using System.Runtime.InteropServices;
-public class ConsoleQuickEdit {
-    const uint ENABLE_QUICK_EDIT = 0x0040;
-    const int STD_INPUT_HANDLE = -10;
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern IntPtr GetStdHandle(int nStdHandle);
-    [DllImport("kernel32.dll")]
-    static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-    [DllImport("kernel32.dll")]
-    static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-    public static void Disable() {
-        IntPtr handle = GetStdHandle(STD_INPUT_HANDLE);
-        uint mode;
-        if (GetConsoleMode(handle, out mode)) {
-            mode &= ~ENABLE_QUICK_EDIT;
-            SetConsoleMode(handle, mode);
+# Detecta se as DLLs do SDK em sdk_dlls sao 32-bit (x86) ou 64-bit (x64)
+$sdkDll = Join-Path $ProjectRoot "sdk_dlls\HCNetSDK.dll"
+$isSdk32 = $false
+if (Test-Path $sdkDll) {
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($sdkDll)
+        if ($bytes.Length -ge 0x40 -and $bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) {
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            if ($machine -eq 0x14C) { $isSdk32 = $true }
         }
-    }
-}
-"@
-    Add-Type -TypeDefinition $consoleHelper -ErrorAction SilentlyContinue
-    [ConsoleQuickEdit]::Disable()
-} catch { }
-
-$pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pythonCommand) {
-    Write-Host "Python 3.10+ nao encontrado no PATH." -ForegroundColor Red
-    exit 1
+    } catch { }
 }
 
 $venvPath = Join-Path $ProjectRoot ".venv"
 $venvPython = Join-Path $venvPath "Scripts\python.exe"
-if (-not (Test-Path $venvPython)) {
-    Write-Host "Criando ambiente virtual .venv..." -ForegroundColor Cyan
-    & python -m venv $venvPath
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao criar .venv" }
+
+# Se as DLLs forem 32-bit (como as originais do WD-Desk V2), o Python DEVE ser 32-bit
+if ($isSdk32) {
+    Write-Host "[SDK Arquitetura] DLLs detectadas: 32-bit (x86 do WD-DESK V2)." -ForegroundColor Cyan
+    $venvPath = Join-Path $ProjectRoot ".venv32"
+    $venvPython = Join-Path $venvPath "Scripts\python.exe"
+
+    if (-not (Test-Path $venvPython)) {
+        # Procura se o launcher py.exe tem um Python 32-bit instalado
+        $pyCmd = $null
+        $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+        if ($pyLauncher) {
+            $pyList = & py -0p 2>&1
+            if ($pyList -match "-3\.\d+-32") {
+                $pyCmd = "py -3-32"
+            }
+        }
+        if (-not $pyCmd) {
+            Write-Host "==========================================================================" -ForegroundColor Yellow
+            Write-Host "AVISO: As DLLs do WD-Desk V2 sao 32-bit (x86). Para o SDK carregar no Windows," -ForegroundColor Yellow
+            Write-Host "e necessario ter o Python 32-bit instalado lado a lado com o 64-bit." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "Instale rapidamente o Python 32-bit pelo PowerShell executando:" -ForegroundColor Green
+            Write-Host "  winget install Python.Python.3.11 --architecture x86" -ForegroundColor Green
+            Write-Host "Ou baixe o instalador oficial 32-bit em:" -ForegroundColor Cyan
+            Write-Host "  https://www.python.org/ftp/python/3.11.9/python-3.11.9.exe" -ForegroundColor Cyan
+            Write-Host "==========================================================================" -ForegroundColor Yellow
+            exit 1
+        }
+        Write-Host "Criando ambiente virtual 32-bit (.venv32)..." -ForegroundColor Cyan
+        & py -3-32 -m venv $venvPath
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao criar .venv32" }
+    }
+} else {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $pythonCommand) {
+        Write-Host "Python 3.10+ nao encontrado no PATH." -ForegroundColor Red
+        exit 1
+    }
+    if (-not (Test-Path $venvPython)) {
+        Write-Host "Criando ambiente virtual .venv..." -ForegroundColor Cyan
+        & python -m venv $venvPath
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao criar .venv" }
+    }
 }
 
 Write-Host "Atualizando pip e instalando dependencias..." -ForegroundColor Cyan
