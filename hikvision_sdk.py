@@ -259,25 +259,36 @@ def carregar_sdk():
     try:
         subpasta_com = os.path.join(diretorio_dll, "HCNetSDKCom")
         if sys.platform == "win32":
-            # Detecta instalacoes do iVMS-4200 para compartilhar DLLs de criptografia e suporte
+            # Detecta instalacoes do WD-DESK V2 (JFL) e iVMS-4200 para compartilhar DLLs homologadas e criptografia
             pastas_suporte = [diretorio_dll, subpasta_com]
             bases_prog = [
                 os.environ.get("ProgramFiles", r"C:\Program Files"),
                 os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
-                r"C:", r"D:",
+                r"C:", r"D:", r"E:",
             ]
             for b in bases_prog:
                 for s in [
+                    r"WD-DESK V2",
+                    r"WD-DESK V2\Client",
+                    r"WD-Desk V2",
+                    r"WD-Desk V2\Client",
+                    r"WD DESK V2",
+                    r"WD DESK V2\Client",
+                    r"JFL Alarmes\WD-DESK V2",
+                    r"JFL Alarmes\WD-DESK V2\Client",
+                    r"JFL\WD-DESK V2",
+                    r"JFL\WD-DESK V2\Client",
                     r"iVMS-4200 Site\iVMS-4200 Client\Client",
                     r"iVMS-4200\iVMS-4200 Client\Client",
                     r"iVMS-4200\Client",
+                    r"iVMS-4200 Lite\Client",
                 ]:
                     p = os.path.join(b, s)
                     if os.path.isdir(p) and p not in pastas_suporte:
                         pastas_suporte.append(p)
-                        sub_ivms_com = os.path.join(p, "HCNetSDKCom")
-                        if os.path.isdir(sub_ivms_com) and sub_ivms_com not in pastas_suporte:
-                            pastas_suporte.append(sub_ivms_com)
+                        sub_com = os.path.join(p, "HCNetSDKCom")
+                        if os.path.isdir(sub_com) and sub_com not in pastas_suporte:
+                            pastas_suporte.append(sub_com)
 
             for p_dir in pastas_suporte:
                 if os.path.isdir(p_dir):

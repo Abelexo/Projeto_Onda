@@ -86,9 +86,13 @@ if (-not $ffmpegPath -and -not (Test-Path $ffmpegLocal)) {
 
 $sdkDll = Join-Path $ProjectRoot "sdk_dlls\HCNetSDK.dll"
 if (Test-Path $sdkDll) {
-    Write-Host "SDK Hikvision encontrado: porta 8000 disponivel." -ForegroundColor Green
+    Write-Host "SDK Hikvision/JFL encontrado: porta 8000 disponivel." -ForegroundColor Green
 } else {
     Write-Host "AVISO: sdk_dlls\HCNetSDK.dll nao encontrado; sera usado ISAPI porta 80." -ForegroundColor Yellow
+}
+$scriptImportarWd = Join-Path $ProjectRoot "importar_dlls_wddesk.py"
+if (Test-Path $scriptImportarWd) {
+    Write-Host "DICA DHD/JFL: Para sincronizar as DLLs homologadas do WD-DESK V2 para as DVRs JFL DHD, execute: python importar_dlls_wddesk.py" -ForegroundColor Cyan
 }
 
 $defaultDestination = Join-Path $ProjectRoot "gravacoes"
