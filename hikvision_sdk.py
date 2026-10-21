@@ -50,6 +50,9 @@ ERROS_HIKVISION = {
     102: "Sessao nao autenticada na DVR (NET_DVR_USER_NOT_SUCC_LOGIN) - login V30/V40 nao foi concluido com sucesso",
 }
 
+_login_cooldown = {}  # ip -> epoch ate quando nao tentar login SDK de novo (protege a DVR contra bloqueio)
+
+
 def formatar_erro_sdk(codigo):
     desc = ERROS_HIKVISION.get(codigo, "Erro desconhecido")
     return f"codigo {codigo} ({desc})"
@@ -500,10 +503,24 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
 
     ultimo_erro = 0
 
+    if _login_cooldown.get(ip_limpo, 0) > time.time():
+        print(f"[SDK] Login em {ip_limpo} em cooldown (falhou recentemente com senha/protocolo). Indo direto para ISAPI.")
+        sys.stdout.flush()
+        return -1, None
+
     def _deve_abortar_tentativas(cod_erro, dev_v40=None):
         tentativas_restantes = int(getattr(dev_v40, "byRetryLoginTime", 0)) if dev_v40 else 0
         tempo_bloqueio = int(getattr(dev_v40, "dwSurplusLockTime", 0)) if dev_v40 else 0
+        if cod_erro == 1 and tempo_bloqueio == 0 and tentativas_restantes >= 3:
+            # DVRs JFL/OEM (ex.: DHD-xxxxN, firmware V4.30) podem recusar o login privado TLS adaptativo
+            # com 'senha incorreta' mesmo com a senha certa (a mesma senha funciona no ISAPI).
+            # Enquanto sobrarem 3+ tentativas na DVR, testa o proximo metodo (TCP sem TLS, depois V30).
+            print(f"[SDK] Codigo 1 em {ip_limpo}:{porta_num} com {tentativas_restantes} tentativas restantes: "
+                  f"testando metodo alternativo antes de desistir (senha pode estar certa - ISAPI aceita).")
+            sys.stdout.flush()
+            return False
         if cod_erro in (1, 2) or tempo_bloqueio > 0:
+            _login_cooldown[ip_limpo] = time.time() + 600
             info_lock = ""
             if tempo_bloqueio > 0:
                 info_lock = f" [CONTA BLOQUEADA NA DVR por mais {tempo_bloqueio}s ({tempo_bloqueio // 60}min)]"
@@ -590,6 +607,8 @@ def _fazer_login(dvr_ip, porta, usuario, senha):
         ultimo_erro = _sdk.NET_DVR_GetLastError()
         print(f"[SDK] Login V30 retornou {formatar_erro_sdk(ultimo_erro)}.")
         sys.stdout.flush()
+        if ultimo_erro == 1:
+            _login_cooldown[ip_limpo] = time.time() + 600
 
     return -1, None
 
