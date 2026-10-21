@@ -131,10 +131,6 @@ class NET_DVR_USER_LOGIN_INFO(Structure):
         ("byRes3", c_byte * 123)
     ]
 
-# Validacao em tempo de carga para evitar qualquer divergencia de ABI
-assert ctypes.sizeof(NET_DVR_USER_LOGIN_INFO) == 416, f"NET_DVR_USER_LOGIN_INFO deve ter 416 bytes, obteve {ctypes.sizeof(NET_DVR_USER_LOGIN_INFO)}"
-assert NET_DVR_USER_LOGIN_INFO.bUseAsynLogin.offset == 280, f"bUseAsynLogin deve estar no offset 280, obteve {NET_DVR_USER_LOGIN_INFO.bUseAsynLogin.offset}"
-
 
 class NET_DVR_DEVICEINFO_V40(Structure):
     _pack_ = 1
@@ -186,18 +182,31 @@ class NET_DVR_LOCAL_SDK_PATH(Structure):
 # ===========================================================================
 # Validacao completa de integridade de ABI em tempo de carga para TODAS as estruturas C
 # Garante 100% de certeza que nao havera nenhum erro de alinhamento/padding entre Python e C
+# Suporta nativamente tanto ambientes 64-bit (x64) quanto 32-bit (x86 do WD-Desk V2)
 # ===========================================================================
 assert ctypes.sizeof(NET_DVR_DEVICEINFO_V30) == 80, f"NET_DVR_DEVICEINFO_V30 deve ter 80 bytes, obteve {ctypes.sizeof(NET_DVR_DEVICEINFO_V30)}"
 assert ctypes.sizeof(NET_DVR_DEVICEINFO_V40) == 344, f"NET_DVR_DEVICEINFO_V40 deve ter 344 bytes, obteve {ctypes.sizeof(NET_DVR_DEVICEINFO_V40)}"
 assert ctypes.sizeof(NET_DVR_TIME) == 24, f"NET_DVR_TIME deve ter 24 bytes, obteve {ctypes.sizeof(NET_DVR_TIME)}"
 assert ctypes.sizeof(NET_DVR_LOCAL_SDK_PATH) == 384, f"NET_DVR_LOCAL_SDK_PATH deve ter 384 bytes, obteve {ctypes.sizeof(NET_DVR_LOCAL_SDK_PATH)}"
-assert ctypes.sizeof(NET_DVR_USER_LOGIN_INFO) == 416, f"NET_DVR_USER_LOGIN_INFO deve ter 416 bytes, obteve {ctypes.sizeof(NET_DVR_USER_LOGIN_INFO)}"
-assert NET_DVR_USER_LOGIN_INFO.wPort.offset == 130, f"wPort deve estar no offset 130"
-assert NET_DVR_USER_LOGIN_INFO.cbLoginResult.offset == 264, f"cbLoginResult deve estar no offset 264"
-assert NET_DVR_USER_LOGIN_INFO.pUser.offset == 272, f"pUser deve estar no offset 272"
-assert NET_DVR_USER_LOGIN_INFO.bUseAsynLogin.offset == 280, f"bUseAsynLogin deve estar no offset 280"
-assert NET_DVR_USER_LOGIN_INFO.byLoginMode.offset == 286, f"byLoginMode deve estar no offset 286"
-assert NET_DVR_USER_LOGIN_INFO.byHttps.offset == 287, f"byHttps deve estar no offset 287"
+
+if ctypes.sizeof(ctypes.c_void_p) == 8:
+    # Arquitetura 64-bit (x64): ponteiros de 8 bytes com 4 bytes de padding entre sPassword e cbLoginResult
+    assert ctypes.sizeof(NET_DVR_USER_LOGIN_INFO) == 416, f"NET_DVR_USER_LOGIN_INFO deve ter 416 bytes, obteve {ctypes.sizeof(NET_DVR_USER_LOGIN_INFO)}"
+    assert NET_DVR_USER_LOGIN_INFO.wPort.offset == 130, "wPort deve estar no offset 130"
+    assert NET_DVR_USER_LOGIN_INFO.cbLoginResult.offset == 264, "cbLoginResult deve estar no offset 264"
+    assert NET_DVR_USER_LOGIN_INFO.pUser.offset == 272, "pUser deve estar no offset 272"
+    assert NET_DVR_USER_LOGIN_INFO.bUseAsynLogin.offset == 280, "bUseAsynLogin deve estar no offset 280"
+    assert NET_DVR_USER_LOGIN_INFO.byLoginMode.offset == 286, "byLoginMode deve estar no offset 286"
+    assert NET_DVR_USER_LOGIN_INFO.byHttps.offset == 287, "byHttps deve estar no offset 287"
+else:
+    # Arquitetura 32-bit (x86): ponteiros de 4 bytes sem padding
+    assert ctypes.sizeof(NET_DVR_USER_LOGIN_INFO) == 404, f"NET_DVR_USER_LOGIN_INFO deve ter 404 bytes, obteve {ctypes.sizeof(NET_DVR_USER_LOGIN_INFO)}"
+    assert NET_DVR_USER_LOGIN_INFO.wPort.offset == 130, "wPort deve estar no offset 130"
+    assert NET_DVR_USER_LOGIN_INFO.cbLoginResult.offset == 260, "cbLoginResult deve estar no offset 260"
+    assert NET_DVR_USER_LOGIN_INFO.pUser.offset == 264, "pUser deve estar no offset 264"
+    assert NET_DVR_USER_LOGIN_INFO.bUseAsynLogin.offset == 268, "bUseAsynLogin deve estar no offset 268"
+    assert NET_DVR_USER_LOGIN_INFO.byLoginMode.offset == 274, "byLoginMode deve estar no offset 274"
+    assert NET_DVR_USER_LOGIN_INFO.byHttps.offset == 275, "byHttps deve estar no offset 275"
 
 
 _sdk = None
