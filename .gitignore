@@ -68,6 +68,8 @@ modificacoes/
 
 # Integracao interna com o Rocket (exclusiva local - nao enviar ao GitHub)
 rocket_integracao/
+testes/
+sdk_dlls/MP_Render.dll
 
 # Preferencia local de destino do Watchdog
 .destino_gravacoes
