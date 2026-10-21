@@ -1144,6 +1144,24 @@
       const fimLocal = campo('data_fim');
       if (!inicioLocal || !fimLocal) throw new Error('Selecione os horários de início e fim.');
       if (new Date(fimLocal) <= new Date(inicioLocal)) throw new Error('O horário final deve ser depois do horário inicial.');
+      // Descobre a porta do servidor (SDK) perguntando a propria DVR (evita assumir 8000)
+      let portaSdkFinal = Number(campo('porta_sdk')) || 8000;
+      if (portaSdkFinal === 8000 && campo('senha')) {
+        try {
+          mensagem.textContent = 'Consultando a porta SDK da DVR...';
+          const rp = await fetch('/api/dvr/porta-sdk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dvr_ip: ip, usuario: campo('usuario') || 'admin', senha: campo('senha') })
+          });
+          const dp = await rp.json();
+          if (dp.porta_sdk) {
+            portaSdkFinal = dp.porta_sdk;
+            document.querySelector('#porta_sdk').value = portaSdkFinal;
+          }
+        } catch (e) { /* mantem 8000 se a DVR nao responder */ }
+        mensagem.textContent = 'Enviando...';
+      }
       const dados = {
         dvr_ip: ip,
         escola: campo('escola'),
@@ -1153,7 +1171,7 @@
         cameras: campo('cameras') || '1',
         data_inicio: iso(inicioLocal),
         data_fim: iso(fimLocal),
-        porta_sdk: Number(campo('porta_sdk')) || 8000,
+        porta_sdk: portaSdkFinal,
         modo_download: campo('modo_download') || 'auto'
       };
       const resposta = await fetch('/api/jobs', {

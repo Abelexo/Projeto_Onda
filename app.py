@@ -322,6 +322,43 @@ def preparar_banco():
 # Comunicação com a DVR (ISAPI)
 # ---------------------------------------------------------------------------
 
+_cache_porta_sdk = {}  # ip -> (porta, epoch) ; porta do servidor (DEV_MANAGE) informada pela propria DVR
+_PORTA_SDK_TTL = 6 * 3600
+
+
+def detectar_porta_sdk(ip, usuario, senha, porta_http=80, usar_cache=True):
+    """
+    Descobre a 'porta do servidor' (usada pelo SDK) perguntando a propria DVR via ISAPI
+    (GET /ISAPI/Security/adminAccesses -> protocolo DEV_MANAGE). Leitura simples, sem login SDK.
+    Retorna a porta (int) ou None se a DVR nao responder/nao suportar (ex.: MHDX sem ISAPI).
+    """
+    ip_limpo, _ = hikvision_sdk._limpar_ip_e_porta(ip, 8000)
+    if not ip_limpo or not senha:
+        return None
+    agora = time.time()
+    if usar_cache:
+        em_cache = _cache_porta_sdk.get(ip_limpo)
+        if em_cache and agora - em_cache[1] < _PORTA_SDK_TTL:
+            return em_cache[0]
+    try:
+        resp = requests.get(
+            f"http://{ip_limpo}:{int(porta_http or 80)}/ISAPI/Security/adminAccesses",
+            auth=HTTPDigestAuth(usuario or "admin", senha), timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        achado = re.search(r"<protocol>\s*DEV_MANAGE\s*</protocol>\s*<portNo>\s*(\d+)\s*</portNo>", resp.text)
+        if not achado:
+            return None
+        porta = int(achado.group(1))
+        if 1 <= porta <= 65535:
+            _cache_porta_sdk[ip_limpo] = (porta, agora)
+            return porta
+    except (requests.exceptions.RequestException, ValueError):
+        pass
+    return None
+
+
 def dvr_esta_acessivel(ip, porta=80, timeout=3):
     ip_limpo, _ = hikvision_sdk._limpar_ip_e_porta(ip, porta)
     try:
@@ -1171,6 +1208,16 @@ def processar_job(job):
                     return
                 atualizar_status_job("buscando", detalhe=None)
 
+            # Se o pedido veio com a porta padrao (8000), pergunta a propria DVR qual e a porta do servidor.
+            if modo_download in ("auto", "sdk") and int(porta_sdk) == 8000:
+                porta_real = detectar_porta_sdk(dvr_ip, usuario, senha)
+                if porta_real and porta_real != porta_sdk:
+                    print(f"[job {job_id}] Porta SDK detectada na propria DVR: {porta_real} (pedido usava {porta_sdk}).")
+                    porta_sdk = porta_real
+                    with banco_lock:
+                        banco.execute("UPDATE jobs SET porta_sdk=? WHERE id=?", (porta_real, job_id))
+                        banco.commit()
+
             # 1. Avalia se o SDK (porta 8000) autentica nesta DVR e mantém a sessão aberta!
             usar_sdk = False
             if modo_download in ("auto", "sdk") and hikvision_sdk.sdk_disponivel():
@@ -1567,6 +1614,22 @@ def verificar_status_dvr():
         "nome": nome_escola,
         "porta_ativa": porta_ativa
     })
+
+
+@app.route("/api/dvr/porta-sdk", methods=["POST"])
+def api_detectar_porta_sdk():
+    """Consulta a propria DVR e devolve a porta do servidor (SDK). Corpo: {dvr_ip, usuario, senha, porta_http?}."""
+    dados = request.get_json(silent=True) or {}
+    ip = str(dados.get("dvr_ip", "")).strip()
+    if not ip:
+        return jsonify({"porta_sdk": None, "erro": "IP nao informado"}), 400
+    try:
+        porta_http = int(dados.get("porta_http") or 80)
+    except (ValueError, TypeError):
+        porta_http = 80
+    porta = detectar_porta_sdk(ip, str(dados.get("usuario") or "admin").strip(),
+                               str(dados.get("senha") or "").strip(), porta_http, usar_cache=False)
+    return jsonify({"porta_sdk": porta, "detectada": porta is not None})
 
 
 @app.route("/api/jobs", methods=["GET"])
