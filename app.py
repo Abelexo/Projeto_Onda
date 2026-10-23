@@ -64,6 +64,10 @@ import telegram_bot
 # rede). Ajuste para o caminho real da sua pasta compartilhada.
 PASTA_DESTINO = os.environ.get("DVR_APP_DESTINO", "gravacoes")
 
+# Retenção de gravações em disco
+RETENCAO_DIAS = int(os.environ.get("DVR_RETENCAO_DIAS", "30"))
+RETENCAO_AUTO = os.environ.get("DVR_RETENCAO_AUTO", "0") == "1"
+
 BANCO_PATH = os.environ.get("DVR_APP_BANCO", "dvr_app.db")
 
 # Intervalo entre "rodadas" do trabalhador: a cada X segundos ele olha o
@@ -80,7 +84,7 @@ TEMPO_FASE_RAPIDA_SEGUNDOS = 60
 
 # Quantidade máxima de pedidos (jobs) de DVRs diferentes baixando simultaneamente.
 # Permite baixar 2 ou 3 escolas ao mesmo tempo sem um download travar a fila do outro!
-MAX_JOBS_SIMULTANEOS = int(os.environ.get("DVR_MAX_WORKERS", "3"))
+MAX_JOBS_SIMULTANEOS = int(os.environ.get("DVR_MAX_WORKERS", "5"))
 
 # Fuso horario da regiao onde estao as DVRs (Cuiaba/Campo Grande = America/Cuiaba UTC-4)
 NOME_FUSO = os.environ.get("DVR_TIMEZONE", "America/Cuiaba")
@@ -92,6 +96,172 @@ except Exception:
 
 class DownloadCancelado(Exception):
     """Interrompe uma transferência sem transformar cancelamento em erro."""
+
+
+def descrever_erro(excecao_ou_texto):
+    """
+    Padroniza mensagens de erro no formato: 'Causa: ... | Sugestão: ...'
+    Traduz exceções comuns de rede, autenticação, DVR e processamento de vídeo para português claro.
+    """
+    if not excecao_ou_texto:
+        return None
+
+    texto = str(excecao_ou_texto).strip()
+    if not texto:
+        return None
+
+    if texto.startswith("Causa:") and " | Sugestão:" in texto:
+        return texto
+
+    texto_lower = texto.lower()
+
+    # 1. Limite de conexões simultâneas da DVR (OVER_MAXLINK)
+    if (
+        "over_maxlink" in texto_lower
+        or "over maxlink" in texto_lower
+        or "limite maximo de conexoes" in texto_lower
+        or "limite máximo de conexões" in texto_lower
+    ):
+        return (
+            "Causa: Limite máximo de conexões simultâneas atingido na DVR (OVER_MAXLINK) | "
+            "Sugestão: Aguarde alguns instantes antes de tentar novamente ou desconecte outros acessos ativos no equipamento."
+        )
+
+    # 2. Câmera ou canal inválido/inexistente
+    if (
+        isinstance(excecao_ou_texto, getattr(hikvision_sdk, "CameraInvalidaError", ()))
+        or "badtrackid" in texto_lower
+        or "invalidtrack" in texto_lower
+        or ("câmera" in texto_lower and ("inválida" in texto_lower or "inexistente" in texto_lower))
+        or ("camera" in texto_lower and ("invalida" in texto_lower or "inexistente" in texto_lower))
+        or "net_dvr_channel_error" in texto_lower
+        or "canal incorreto" in texto_lower
+    ):
+        return (
+            f"Causa: Canal ou câmera inexistente ou inválida na DVR ({texto}) | "
+            "Sugestão: Verifique o número correto das câmeras disponíveis no equipamento ou catálogo de escolas."
+        )
+
+    # 3. Login / senha inválidos (401 / NET_DVR_PASSWORD_ERROR / etc.)
+    if (
+        "401" in texto_lower
+        or "unauthorized" in texto_lower
+        or "password_error" in texto_lower
+        or "usuario ou senha incorretos" in texto_lower
+        or "falha de autenticacao" in texto_lower
+        or "falha de autenticação" in texto_lower
+        or "user_not_succ_login" in texto_lower
+        or "permissao insuficiente" in texto_lower
+        or "permissão insuficiente" in texto_lower
+        or "noenoughpri" in texto_lower
+    ):
+        return (
+            "Causa: Usuário ou senha inválidos na DVR (401 / Autenticação rejeitada) | "
+            "Sugestão: Verifique as credenciais de acesso cadastradas para esta unidade ou se a porta está liberada."
+        )
+
+    # 4. Sem gravações no período
+    if (
+        "nenhuma gravacao encontrada" in texto_lower
+        or "nenhuma gravação encontrada" in texto_lower
+        or "sem_gravacoes" in texto_lower
+        or "no_recordfile" in texto_lower
+        or "nao encontrou gravacoes" in texto_lower
+        or "não encontrou gravações" in texto_lower
+    ):
+        return (
+            "Causa: Nenhuma gravação encontrada no período informado | "
+            "Sugestão: Verifique se a DVR estava gravando no horário solicitado ou amplie o intervalo de busca."
+        )
+
+    # 5. Disco cheio (local ou na DVR)
+    if (
+        "no space left on device" in texto_lower
+        or "espaço insuficiente" in texto_lower
+        or "espaco insuficiente" in texto_lower
+        or "disk full" in texto_lower
+        or "disco cheio" in texto_lower
+        or "net_dvr_disk_error" in texto_lower
+    ):
+        return (
+            "Causa: Espaço em disco insuficiente no servidor de armazenamento | "
+            "Sugestão: Libere espaço na partição de disco onde as gravações são salvas."
+        )
+
+    # 6. Falha do FFmpeg / conversão
+    if (
+        "ffmpeg" in texto_lower
+        or "gstreamer" in texto_lower
+        or "converter/cortar" in texto_lower
+        or "converter_e_cortar" in texto_lower
+        or "falha ao converter" in texto_lower
+        or "falhou ao converter" in texto_lower
+        or "arquivo recebido muito pequeno" in texto_lower
+        or "verificacao final falhou" in texto_lower
+        or "verificação final falhou" in texto_lower
+    ):
+        trecho_resumo = texto[-140:] if len(texto) > 140 else texto
+        return (
+            f"Causa: Falha durante o processamento ou corte do vídeo via FFmpeg ({trecho_resumo}) | "
+            "Sugestão: Verifique a integridade do arquivo bruto baixado e a instalação do FFmpeg no servidor."
+        )
+
+    # 7. SDK indisponível (fallback ISAPI)
+    if (
+        "sdk indisponivel" in texto_lower
+        or "sdk indisponível" in texto_lower
+        or "hcnetsdk" in texto_lower
+        or "net_dvr_noinit" in texto_lower
+    ):
+        return (
+            "Causa: SDK Hikvision nativo indisponível no ambiente operacional | "
+            "Sugestão: O sistema utilizará o protocolo ISAPI (porta 80 HTTP) como alternativa automática."
+        )
+
+    # 8. Timeout
+    if (
+        isinstance(excecao_ou_texto, (requests.exceptions.Timeout, socket.timeout))
+        or "timed out" in texto_lower
+        or "timeout" in texto_lower
+        or "recv_timeout" in texto_lower
+        or "commandtimeout" in texto_lower
+    ):
+        return (
+            "Causa: Tempo limite de comunicação com a DVR esgotado (Timeout) | "
+            "Sugestão: A conexão de rede com a DVR pode estar congestionada ou oscilando; tente novamente em instantes."
+        )
+
+    # 9. DVR inacessível / offline / erro de rede
+    if (
+        isinstance(excecao_ou_texto, (requests.exceptions.ConnectionError, socket.error))
+        or "connection refused" in texto_lower
+        or "failed to establish a new connection" in texto_lower
+        or "network_fail_connect" in texto_lower
+        or "host is unreachable" in texto_lower
+        or "no route to host" in texto_lower
+        or "network is unreachable" in texto_lower
+        or "inacessivel" in texto_lower
+        or "inacessível" in texto_lower
+        or "sem resposta" in texto_lower
+        or "queda de conexao" in texto_lower
+        or "queda de conexão" in texto_lower
+        or "dispositivo offline" in texto_lower
+        or "offline" in texto_lower
+    ):
+        return (
+            "Causa: DVR/NVR inacessível ou offline na rede | "
+            "Sugestão: Verifique se a unidade escolar está com energia e conexão de rede ativas e se o IP/porta estão liberados no firewall."
+        )
+
+    # 10. Trechos não puderam ser baixados
+    if "nao puderam ser baixados" in texto_lower or "não puderam ser baixados" in texto_lower:
+        return (
+            "Causa: Um ou mais trechos de gravação não puderam ser baixados da DVR | "
+            "Sugestão: Verifique a estabilidade da conexão da escola e solicite novamente o download dos trechos pendentes."
+        )
+
+    # Fallback genérico
+    return f"Causa: {texto} | Sugestão: Verifique os parâmetros informados, a conectividade com a DVR e os logs do sistema."
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +379,17 @@ def preparar_banco():
                 processado_em TEXT
             )
         """)
+        banco.execute("""
+            CREATE TABLE IF NOT EXISTS historico_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER,
+                codigo_escola TEXT,
+                protocolo TEXT,
+                trechos INTEGER,
+                bytes INTEGER,
+                arquivado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         chave_gravacoes = [
             linha[1] for linha in banco.execute("PRAGMA table_info(gravacoes)")
             if linha[5]
@@ -316,6 +497,46 @@ def preparar_banco():
                     except Exception as e:
                         print(f"Aviso: nao foi possivel carregar escolas de {nome_json}: {e}")
         banco.commit()
+
+
+def arquivar_job_concluido(job_id):
+    """
+    Arquiva as métricas de um job concluído na tabela historico_jobs antes da exclusão.
+    Deve ser chamada dentro de banco_lock e NÃO faz commit próprio.
+    Só arquiva se o job tiver status='concluido'.
+    """
+    linha = banco.execute(
+        "SELECT status, codigo_escola, protocolo_ativo, modo_download FROM jobs WHERE id=?",
+        (job_id,),
+    ).fetchone()
+    if not linha or linha[0] != "concluido":
+        return
+
+    ja_arquivado = banco.execute(
+        "SELECT 1 FROM historico_jobs WHERE job_id=?", (job_id,)
+    ).fetchone()
+    if ja_arquivado:
+        return
+
+    _, codigo_escola, protocolo_ativo, modo_download = linha
+    proto = str(protocolo_ativo or (modo_download.upper() if modo_download else "") or "ISAPI").strip()
+    if not proto or proto.upper() in ("AUTO", "NONE", "NULL"):
+        proto = "ISAPI"
+    else:
+        proto = proto.upper()
+
+    grav_stats = banco.execute(
+        "SELECT COUNT(*), COALESCE(SUM(bytes_baixados), 0) FROM gravacoes WHERE job_id=? AND status='concluido'",
+        (job_id,),
+    ).fetchone()
+    trechos = (grav_stats[0] if grav_stats else 0) or 0
+    bytes_baixados = (grav_stats[1] if grav_stats else 0) or 0
+
+    banco.execute(
+        "INSERT INTO historico_jobs (job_id, codigo_escola, protocolo, trechos, bytes) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (job_id, codigo_escola, proto, trechos, bytes_baixados),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -946,7 +1167,7 @@ def baixar_pendentes_do_job(
                         if job_foi_cancelado(job_id):
                             raise DownloadCancelado()
                     except hikvision_sdk.CameraInvalidaError as e_invalida:
-                        msg_invalida = str(e_invalida)
+                        msg_invalida = descrever_erro(e_invalida)
                         print(f"[job {job_id}] Câmera inválida detectada: {msg_invalida}")
                         with banco_lock:
                             banco.execute(
@@ -1055,7 +1276,7 @@ def baixar_pendentes_do_job(
                                 checar_cancelado=lambda: job_foi_cancelado(job_id),
                             )
                     except hikvision_sdk.CameraInvalidaError as e_invalida_isapi:
-                        msg_invalida = str(e_invalida_isapi)
+                        msg_invalida = descrever_erro(e_invalida_isapi)
                         print(f"[job {job_id}] Câmera inválida detectada no ISAPI: {msg_invalida}")
                         with banco_lock:
                             banco.execute(
@@ -1136,7 +1357,7 @@ def baixar_pendentes_do_job(
                         "UPDATE gravacoes SET status='erro', ultimo_erro=?, "
                         "atualizado_em=CURRENT_TIMESTAMP WHERE job_id=? AND dvr_ip=? "
                         "AND camera=? AND nome_trecho=?",
-                        (str(erro), job_id, dvr_ip, camera, nome_trecho),
+                        (descrever_erro(erro), job_id, dvr_ip, camera, nome_trecho),
                     )
                     banco.commit()
                 print(f"[job {job_id}] erro no trecho {nome_trecho}: {erro}")
@@ -1166,6 +1387,8 @@ def processar_job(job):
     def atualizar_status_job(novo_status, detalhe=None, protocolo=None):
         if job_foi_cancelado(job_id):
             return
+        if detalhe is not None and novo_status in ("erro", "sem_gravacoes"):
+            detalhe = descrever_erro(detalhe)
         with banco_lock:
             banco.execute(
                 "UPDATE jobs SET status=?, erro_detalhe=?, protocolo_ativo=COALESCE(?, protocolo_ativo), "
@@ -1231,7 +1454,7 @@ def processar_job(job):
                 else:
                     print(f"[job {job_id}] SDK nao autenticou na porta {porta_sdk} ({dvr_ip}).")
                     if modo_download == "sdk":
-                        atualizar_status_job("erro", detalhe=f"Falha de autenticacao SDK na porta {porta_sdk} ({dvr_ip}). Verifique usuario, senha ou se a porta {porta_sdk} esta liberada.")
+                        atualizar_status_job("erro", detalhe=descrever_erro(f"Falha de autenticacao SDK na porta {porta_sdk} ({dvr_ip}). Verifique usuario, senha ou se a porta {porta_sdk} esta liberada."))
                         return
                     print(f"[job {job_id}] Modo auto: alternando definitivamente para ISAPI (porta 80 HTTP) neste job...")
 
@@ -1265,7 +1488,7 @@ def processar_job(job):
                     try:
                         buscar_gravacoes(dvr_ip, auth, camera, data_inicio, data_fim, job_id, checar_cancelado=lambda: job_foi_cancelado(job_id))
                     except hikvision_sdk.CameraInvalidaError as e_invalida_busca:
-                        msg_invalida = str(e_invalida_busca)
+                        msg_invalida = descrever_erro(e_invalida_busca)
                         print(f"[job {job_id}] {msg_invalida}")
                         atualizar_status_job("erro", detalhe=msg_invalida)
                         return
@@ -1281,7 +1504,7 @@ def processar_job(job):
                     "SELECT COUNT(*) FROM gravacoes WHERE job_id=?", (job_id,)
                 ).fetchone()[0]
             if quantidade_gravacoes == 0:
-                detalhe = "Nenhuma gravacao encontrada no periodo e camera informados."
+                detalhe = descrever_erro("Nenhuma gravacao encontrada no periodo e camera informados.")
                 print(f"[job {job_id}] {detalhe}")
                 atualizar_status_job("sem_gravacoes", detalhe)
                 return
@@ -1309,7 +1532,7 @@ def processar_job(job):
             if (restantes or 0) == 0 and (erros or 0) == 0:
                 atualizar_status_job("concluido")
             else:
-                atualizar_status_job("erro", "Um ou mais trechos nao puderam ser baixados.")
+                atualizar_status_job("erro", descrever_erro("Um ou mais trechos nao puderam ser baixados."))
         except DownloadCancelado:
             return
         finally:
@@ -1325,7 +1548,7 @@ def _executar_job_seguro(job):
         processar_job(job)
     except Exception as erro:
         if not job_foi_cancelado(job_id):
-            detalhe = f"Falha no trabalhador: {erro}"
+            detalhe = descrever_erro(f"Falha no trabalhador: {erro}")
             print(f"[job {job_id}] {detalhe}")
             traceback.print_exc()
             with banco_lock:
@@ -1727,9 +1950,45 @@ def saude_aplicacao():
     return jsonify(resposta)
 
 
+@app.route("/api/jobs/finalizados", methods=["DELETE"])
+def excluir_jobs_finalizados():
+    with banco_lock:
+        status_finalizados = ("concluido", "erro", "sem_gravacoes", "cancelado")
+        placeholders_fin = ",".join("?" for _ in status_finalizados)
+
+        protegidos = banco.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE status NOT IN ({placeholders_fin})",
+            status_finalizados,
+        ).fetchone()[0] or 0
+
+        jobs_para_remover = banco.execute(
+            f"SELECT id, status FROM jobs WHERE status IN ({placeholders_fin})",
+            status_finalizados,
+        ).fetchall()
+
+        removidos = 0
+        if jobs_para_remover:
+            for j_id, j_status in jobs_para_remover:
+                if j_status == "concluido":
+                    arquivar_job_concluido(j_id)
+
+            ids_remover = [j[0] for j in jobs_para_remover]
+            removidos = len(ids_remover)
+            chunk_size = 500
+            for i in range(0, len(ids_remover), chunk_size):
+                chunk = ids_remover[i:i + chunk_size]
+                chunk_placeholders = ",".join("?" for _ in chunk)
+                banco.execute(f"DELETE FROM gravacoes WHERE job_id IN ({chunk_placeholders})", chunk)
+                banco.execute(f"DELETE FROM jobs WHERE id IN ({chunk_placeholders})", chunk)
+            banco.commit()
+
+    return jsonify({"removidos": removidos, "protegidos": protegidos})
+
+
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
 def excluir_job(job_id):
     with banco_lock:
+        arquivar_job_concluido(job_id)
         banco.execute("DELETE FROM gravacoes WHERE job_id=?", (job_id,))
         banco.execute("DELETE FROM jobs WHERE id=?", (job_id,))
         banco.commit()
@@ -1747,10 +2006,48 @@ def cancelar_job(job_id):
         if not job:
             return jsonify({"erro": "Job nao encontrado."}), 404
         # Ao clicar em cancelar, interrompe o download e remove o pedido da lista imediatamente
+        arquivar_job_concluido(job_id)
         banco.execute("DELETE FROM gravacoes WHERE job_id=?", (job_id,))
         banco.execute("DELETE FROM jobs WHERE id=?", (job_id,))
         banco.commit()
     return jsonify({"id": job_id, "status": "cancelado", "excluido": True})
+
+
+@app.route("/api/jobs/<int:job_id>/retry", methods=["POST"])
+def reiniciar_job(job_id):
+    """
+    Recoloca um job com erro ou sem gravações de volta na fila com o status inicial 'novo'.
+    Preserva trechos de gravação já concluídos para retomar o download de onde parou.
+    """
+    with banco_lock:
+        job = banco.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if not job:
+            return jsonify({"erro": "Job não encontrado."}), 404
+
+        status_atual = job[0]
+        if status_atual not in ("erro", "sem_gravacoes"):
+            return jsonify({
+                "erro": f"Job com status '{status_atual}' não pode ser reiniciado. Apenas jobs com status 'erro' ou 'sem_gravacoes' são permitidos."
+            }), 409
+
+        # O worker seleciona jobs pendentes com status = 'novo'
+        banco.execute(
+            "UPDATE jobs SET status='novo', erro_detalhe=NULL, iniciado_em=NULL, "
+            "finalizado_em=NULL, protocolo_ativo=NULL WHERE id=?",
+            (job_id,),
+        )
+        # Apaga em gravacoes apenas linhas com status != 'concluido'
+        # para o worker refazer a busca e retomar trechos concluídos com segurança
+        banco.execute(
+            "DELETE FROM gravacoes WHERE job_id=? AND status != 'concluido'",
+            (job_id,),
+        )
+        banco.commit()
+
+    with jobs_ativos_lock:
+        jobs_cancelados.discard(job_id)
+
+    return jsonify({"id": job_id, "status": "novo"}), 200
 
 
 @app.route("/api/gravacoes/<int:job_id>/<int:camera>/<path:nome_trecho>")
@@ -1777,13 +2074,15 @@ def obter_estatisticas():
         escolas_com_ip = banco.execute("SELECT COUNT(*) FROM escolas WHERE dvr_ip IS NOT NULL AND TRIM(dvr_ip) != ''").fetchone()[0] or 0
         escolas_sem_ip = total_escolas - escolas_com_ip
 
-        # Lista de escolas com contagem de pedidos de gravação (jobs) concluídos
+        # Lista de escolas com contagem de pedidos de gravação (jobs) concluídos (vivos + arquivados)
         query_escolas = """
             SELECT e.codigo, e.nome, e.cidade, e.dvr_ip,
-                   COUNT(j.id) as total_gravacoes
+                   (
+                       COALESCE((SELECT COUNT(*) FROM jobs j WHERE j.codigo_escola = e.codigo AND j.status = 'concluido'), 0)
+                       +
+                       COALESCE((SELECT COUNT(*) FROM historico_jobs h WHERE h.codigo_escola = e.codigo), 0)
+                   ) as total_gravacoes
             FROM escolas e
-            LEFT JOIN jobs j ON j.codigo_escola = e.codigo AND j.status = 'concluido'
-            GROUP BY e.codigo
             ORDER BY total_gravacoes DESC, e.nome ASC
         """
         linhas_escolas = banco.execute(query_escolas).fetchall()
@@ -1798,24 +2097,44 @@ def obter_estatisticas():
         # 2. Top 5 escolas com mais gravações (pedidos concluídos)
         top5 = [e for e in lista_escolas if e["gravacoes"] > 0][:5]
 
-        # 3. Downloads por protocolo (SDK vs ISAPI) contados por pedido/job concluído
-        sdk_count = banco.execute(
+        # 3. Downloads por protocolo (SDK vs ISAPI) contados por pedido/job concluído (vivos + arquivados)
+        sdk_vivos = banco.execute(
             "SELECT COUNT(*) FROM jobs "
             "WHERE status='concluido' AND (protocolo_ativo = 'SDK' OR (protocolo_ativo IS NULL AND modo_download = 'sdk'))"
         ).fetchone()[0] or 0
-        isapi_count = banco.execute(
+        sdk_hist = banco.execute(
+            "SELECT COUNT(*) FROM historico_jobs WHERE protocolo = 'SDK'"
+        ).fetchone()[0] or 0
+        sdk_count = sdk_vivos + sdk_hist
+
+        isapi_vivos = banco.execute(
             "SELECT COUNT(*) FROM jobs "
             "WHERE status='concluido' AND (protocolo_ativo = 'ISAPI' OR (protocolo_ativo IS NULL AND modo_download = 'isapi'))"
         ).fetchone()[0] or 0
-        jobs_total = banco.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] or 0
-        jobs_concluidos = banco.execute("SELECT COUNT(*) FROM jobs WHERE status='concluido'").fetchone()[0] or 0
+        isapi_hist = banco.execute(
+            "SELECT COUNT(*) FROM historico_jobs WHERE protocolo != 'SDK'"
+        ).fetchone()[0] or 0
+        isapi_count = isapi_vivos + isapi_hist
+
+        jobs_vivos_total = banco.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] or 0
+        jobs_hist_total = banco.execute("SELECT COUNT(*) FROM historico_jobs").fetchone()[0] or 0
+        jobs_total = jobs_vivos_total + jobs_hist_total
+
+        jobs_concluidos_vivos = banco.execute("SELECT COUNT(*) FROM jobs WHERE status='concluido'").fetchone()[0] or 0
+        jobs_concluidos = jobs_concluidos_vivos + jobs_hist_total
         total_concluidas = jobs_concluidos
+
         outros = max(0, total_concluidas - (sdk_count + isapi_count))
         if outros > 0:
             isapi_count += outros
 
-        total_trechos_concluidos = banco.execute("SELECT COUNT(*) FROM gravacoes WHERE status='concluido'").fetchone()[0] or 0
-        total_bytes = banco.execute("SELECT SUM(bytes_baixados) FROM gravacoes WHERE status='concluido'").fetchone()[0] or 0
+        total_trechos_vivos = banco.execute("SELECT COUNT(*) FROM gravacoes WHERE status='concluido'").fetchone()[0] or 0
+        trechos_hist = banco.execute("SELECT SUM(trechos) FROM historico_jobs").fetchone()[0] or 0
+        total_trechos_concluidos = total_trechos_vivos + (trechos_hist or 0)
+
+        total_bytes_vivos = banco.execute("SELECT SUM(bytes_baixados) FROM gravacoes WHERE status='concluido'").fetchone()[0] or 0
+        bytes_hist = banco.execute("SELECT SUM(bytes) FROM historico_jobs").fetchone()[0] or 0
+        total_bytes = (total_bytes_vivos or 0) + (bytes_hist or 0)
 
         # 4. Estatísticas do Telegram
         total_telegram = banco.execute("SELECT COUNT(*) FROM solicitacoes_telegram").fetchone()[0] or 0
@@ -1853,6 +2172,329 @@ def obter_estatisticas():
             "concluidos": jobs_concluidos
         }
     })
+
+
+# ---------------------------------------------------------------------------
+# Armazenamento e Retenção de Gravações
+# ---------------------------------------------------------------------------
+
+_cache_armazenamento_lock = threading.Lock()
+_cache_armazenamento_dados = None
+_cache_armazenamento_expira_em = 0.0
+CACHE_ARMAZENAMENTO_TTL = 20.0  # 20 segundos
+
+
+def invalidar_cache_armazenamento():
+    """Invalida o cache em memória das gravações armazenadas."""
+    global _cache_armazenamento_dados, _cache_armazenamento_expira_em
+    with _cache_armazenamento_lock:
+        _cache_armazenamento_dados = None
+        _cache_armazenamento_expira_em = 0.0
+
+
+def excluir_gravacao_arquivo_seguro(rel_id):
+    """
+    Exclui com validação estrita de segurança um arquivo .mp4 dentro de PASTA_DESTINO.
+    Remove pastas de câmera e job se ficarem vazias (via os.rmdir).
+    NÃO altera linhas do banco SQLite (preserva estatísticas).
+    Retorna (sucesso: bool, bytes_liberados: int, erro_msg: str | None, status_code: int).
+    """
+    if not rel_id or not isinstance(rel_id, str):
+        return False, 0, "Identificador de gravação inválido.", 400
+
+    rel_limpo = rel_id.strip()
+    if not rel_limpo:
+        return False, 0, "Identificador de gravação não informado.", 400
+
+    # Rejeita caminhos absolutos
+    if os.path.isabs(rel_limpo) or rel_limpo.startswith("/") or rel_limpo.startswith("\\"):
+        return False, 0, "Caminho absoluto não permitido.", 400
+
+    # Rejeita path traversal ('..')
+    componentes = rel_limpo.replace("\\", "/").split("/")
+    if ".." in componentes or "." in componentes:
+        return False, 0, "Caminho inválido (path traversal não permitido).", 400
+
+    if not rel_limpo.lower().endswith(".mp4"):
+        return False, 0, "Apenas arquivos .mp4 podem ser excluídos.", 400
+
+    try:
+        pasta_base = os.path.realpath(PASTA_DESTINO)
+        caminho_alvo = os.path.realpath(os.path.join(PASTA_DESTINO, rel_limpo))
+    except Exception as e_res:
+        return False, 0, f"Erro ao resolver caminho: {e_res}", 400
+
+    try:
+        caminho_comum = os.path.commonpath([pasta_base, caminho_alvo])
+    except Exception:
+        return False, 0, "Caminho fora da pasta de gravações.", 403
+
+    if caminho_comum != pasta_base or caminho_alvo == pasta_base:
+        return False, 0, "Acesso negado: o arquivo deve estar dentro da pasta de gravações.", 403
+
+    if not os.path.isfile(caminho_alvo):
+        return False, 0, "Arquivo de gravação não encontrado.", 404
+
+    try:
+        bytes_liberados = os.path.getsize(caminho_alvo)
+        os.remove(caminho_alvo)
+    except Exception as e_del:
+        return False, 0, f"Falha ao remover arquivo: {e_del}", 500
+
+    # Limpeza de pastas vazias (camera_N e pasta do job)
+    try:
+        pasta_camera = os.path.dirname(caminho_alvo)
+        if pasta_camera != pasta_base and os.path.commonpath([pasta_base, pasta_camera]) == pasta_base:
+            try:
+                os.rmdir(pasta_camera)
+                pasta_job = os.path.dirname(pasta_camera)
+                if pasta_job != pasta_base and os.path.commonpath([pasta_base, pasta_job]) == pasta_base:
+                    try:
+                        os.rmdir(pasta_job)
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+    invalidar_cache_armazenamento()
+    return True, bytes_liberados, None, 200
+
+
+def _coletar_dados_armazenamento():
+    """Varre PASTA_DESTINO e coleta estatísticas e lista de arquivos .mp4."""
+    pasta_abs = os.path.abspath(PASTA_DESTINO)
+
+    # Valida acessibilidade da pasta de gravações
+    acessivel = True
+    erro_acesso = None
+    try:
+        if not os.path.exists(PASTA_DESTINO):
+            try:
+                os.makedirs(PASTA_DESTINO, exist_ok=True)
+            except Exception as e_mkdir:
+                acessivel = False
+                erro_acesso = str(e_mkdir)
+        else:
+            with os.scandir(PASTA_DESTINO):
+                pass
+    except (PermissionError, OSError, Exception) as e_acc:
+        acessivel = False
+        erro_acesso = str(e_acc)
+
+    if not acessivel:
+        return {
+            "pasta": pasta_abs,
+            "acessivel": False,
+            "erro": erro_acesso,
+            "disco": None,
+            "total_gravacoes": 0,
+            "total_bytes": 0,
+            "retencao_dias": RETENCAO_DIAS,
+            "retencao_auto": RETENCAO_AUTO,
+            "truncado": False,
+            "gravacoes": [],
+        }
+
+    # Informações de disco
+    disco_info = None
+    try:
+        du = shutil.disk_usage(PASTA_DESTINO)
+        perc = round((du.used / du.total) * 100, 2) if du.total > 0 else 0.0
+        disco_info = {
+            "total": du.total,
+            "usado": du.used,
+            "livre": du.free,
+            "percentual_usado": perc,
+        }
+    except Exception:
+        disco_info = None
+
+    LIMITE_ARQUIVOS = 5000
+    truncado = False
+    arquivos_coletados = []
+    agora_ts = time.time()
+
+    try:
+        for raiz, _, files in os.walk(PASTA_DESTINO):
+            for f in files:
+                if not f.lower().endswith(".mp4"):
+                    continue
+                # Ignora arquivos temporários e intermediários
+                if f.startswith(".") or f.endswith(".codec.mp4") or f.endswith(".convertendo.mp4") or f.endswith(".tmp") or f.endswith(".part"):
+                    continue
+
+                caminho_completo = os.path.join(raiz, f)
+                try:
+                    st = os.stat(caminho_completo)
+                except (OSError, PermissionError):
+                    continue
+
+                mtime = st.st_mtime
+                tamanho = st.st_size
+
+                try:
+                    rel = os.path.relpath(caminho_completo, PASTA_DESTINO).replace("\\", "/")
+                except Exception:
+                    continue
+
+                partes = rel.split("/")
+                pasta_job = partes[0] if len(partes) > 1 else ""
+
+                camera_val = None
+                if len(partes) >= 2:
+                    m_cam = re.search(r"camera_?(\d+)", partes[-2], re.IGNORECASE)
+                    if not m_cam:
+                        m_cam = re.search(r"camera_?(\d+)", partes[-1], re.IGNORECASE)
+                    if m_cam:
+                        try:
+                            camera_val = int(m_cam.group(1))
+                        except ValueError:
+                            camera_val = m_cam.group(1)
+                else:
+                    m_cam = re.search(r"camera_?(\d+)", partes[-1], re.IGNORECASE)
+                    if m_cam:
+                        try:
+                            camera_val = int(m_cam.group(1))
+                        except ValueError:
+                            camera_val = m_cam.group(1)
+
+                idade_segundos = max(0, int(agora_ts - mtime))
+                dias_rest = max(0.0, round(float(RETENCAO_DIAS) - (idade_segundos / 86400.0), 1))
+                if dias_rest == 0.0:
+                    dias_rest = 0
+                aviso_exclusao = bool(dias_rest <= 1)
+
+                try:
+                    baixado_em = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                except Exception:
+                    baixado_em = datetime.now(timezone.utc).isoformat()
+
+                item = {
+                    "id": rel,
+                    "pasta_job": pasta_job,
+                    "camera": camera_val,
+                    "arquivo": f,
+                    "bytes": tamanho,
+                    "baixado_em": baixado_em,
+                    "idade_segundos": idade_segundos,
+                    "dias_restantes": dias_rest,
+                    "aviso_exclusao": aviso_exclusao,
+                }
+                arquivos_coletados.append((mtime, item))
+                if len(arquivos_coletados) >= LIMITE_ARQUIVOS:
+                    truncado = True
+                    break
+            if truncado:
+                break
+    except (PermissionError, OSError, Exception) as e_walk:
+        return {
+            "pasta": pasta_abs,
+            "acessivel": False,
+            "erro": str(e_walk),
+            "disco": disco_info,
+            "total_gravacoes": 0,
+            "total_bytes": 0,
+            "retencao_dias": RETENCAO_DIAS,
+            "retencao_auto": RETENCAO_AUTO,
+            "truncado": False,
+            "gravacoes": [],
+        }
+
+    # Ordena da mais recente para a mais antiga (maior mtime primeiro)
+    arquivos_coletados.sort(key=lambda x: x[0], reverse=True)
+    gravacoes = [x[1] for x in arquivos_coletados]
+    total_bytes = sum(x["bytes"] for x in gravacoes)
+
+    return {
+        "pasta": pasta_abs,
+        "acessivel": True,
+        "erro": None,
+        "disco": disco_info,
+        "total_gravacoes": len(gravacoes),
+        "total_bytes": total_bytes,
+        "retencao_dias": RETENCAO_DIAS,
+        "retencao_auto": RETENCAO_AUTO,
+        "truncado": truncado,
+        "gravacoes": gravacoes,
+    }
+
+
+def obter_dados_armazenamento(forcar=False):
+    """Retorna os dados de armazenamento usando cache de 20s (com lock)."""
+    global _cache_armazenamento_dados, _cache_armazenamento_expira_em
+    agora_ts = time.time()
+
+    if not forcar:
+        with _cache_armazenamento_lock:
+            if _cache_armazenamento_dados is not None and agora_ts < _cache_armazenamento_expira_em:
+                return _cache_armazenamento_dados
+
+    dados = _coletar_dados_armazenamento()
+
+    if dados.get("acessivel"):
+        with _cache_armazenamento_lock:
+            _cache_armazenamento_dados = dados
+            _cache_armazenamento_expira_em = time.time() + CACHE_ARMAZENAMENTO_TTL
+
+    return dados
+
+
+def loop_retencao_automatica():
+    """
+    Thread daemon de retenção automática: executa 1x por hora (3600s).
+    Apaga gravações .mp4 cuja idade seja superior a RETENCAO_DIAS.
+    """
+    print(f"[retencao] Thread de retenção automática iniciada (limite: {RETENCAO_DIAS} dias).")
+    while True:
+        try:
+            limite_segundos = RETENCAO_DIAS * 86400
+            agora = time.time()
+            if os.path.exists(PASTA_DESTINO):
+                for raiz, _, files in os.walk(PASTA_DESTINO):
+                    for f in files:
+                        if not f.lower().endswith(".mp4"):
+                            continue
+                        if f.startswith(".") or f.endswith(".codec.mp4") or f.endswith(".convertendo.mp4") or f.endswith(".tmp") or f.endswith(".part"):
+                            continue
+                        caminho_completo = os.path.join(raiz, f)
+                        try:
+                            st = os.stat(caminho_completo)
+                            idade = agora - st.st_mtime
+                            if idade > limite_segundos:
+                                rel = os.path.relpath(caminho_completo, PASTA_DESTINO).replace("\\", "/")
+                                ok, bytes_lib, erro_msg, _ = excluir_gravacao_arquivo_seguro(rel)
+                                if ok:
+                                    print(f"[retencao] Gravação expirada excluída: {rel} ({bytes_lib} bytes liberados)")
+                                else:
+                                    print(f"[retencao] Falha ao excluir gravação expirada {rel}: {erro_msg}")
+                        except Exception as e_arq:
+                            print(f"[retencao] Erro ao verificar arquivo {caminho_completo}: {e_arq}")
+        except Exception as e_ciclo:
+            print(f"[retencao] Erro no ciclo de retenção automática: {e_ciclo}")
+        time.sleep(3600)
+
+
+@app.route("/api/armazenamento", methods=["GET"])
+def api_obter_armazenamento():
+    forcar = request.args.get("forcar") in ("1", "true", "True")
+    dados = obter_dados_armazenamento(forcar=forcar)
+    return jsonify(dados)
+
+
+@app.route("/api/armazenamento/gravacao", methods=["DELETE"])
+def api_excluir_gravacao():
+    dados = request.get_json(silent=True)
+    if not isinstance(dados, dict) or "id" not in dados:
+        return jsonify({"erro": "O corpo da requisição deve ser JSON contendo a chave 'id'."}), 400
+
+    rel_id = dados.get("id")
+    sucesso, bytes_liberados, erro_msg, status_code = excluir_gravacao_arquivo_seguro(rel_id)
+    if not sucesso:
+        return jsonify({"erro": erro_msg}), status_code
+
+    return jsonify({"excluido": True, "bytes_liberados": bytes_liberados}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -2026,6 +2668,8 @@ if __name__ == "__main__":
     # na thread principal. daemon=True faz a thread do trabalhador fechar
     # junto se o programa principal for encerrado.
     threading.Thread(target=loop_trabalhador, daemon=True, name="WorkerPrincipal").start()
+    if RETENCAO_AUTO:
+        threading.Thread(target=loop_retencao_automatica, daemon=True, name="RetencaoAutomatica").start()
     telegram_bot.iniciar_servico_telegram()
     # threaded=True garante que o painel web continue respondendo mesmo se um
     # vídeo estiver sendo assistido pelo player simultaneamente.

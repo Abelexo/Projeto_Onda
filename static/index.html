@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Central de Gravações</title>
+  <title>Projeto Onda 2.0</title>
   <style>
     :root { color-scheme: light; --ink:#17211b; --muted:#66736a; --paper:#f4f1e8; --panel:#fffdf8; --line:#d9ded5; --accent:#176b52; --accent-dark:#0d4b3a; --warn:#9a5b12; --danger:#a43f32; }
     * { box-sizing:border-box; }
@@ -64,17 +64,44 @@
     button:hover { background:var(--accent-dark); }
     button:disabled { opacity:.6; cursor:wait; }
     #mensagem { min-height:24px; color:var(--muted); margin:12px 0 0; font-family:system-ui,sans-serif; font-size:.9rem; }
-    .job { border-top:1px solid var(--line); padding:15px 0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; }
+    .job { border:1px solid var(--line); border-radius:8px; background:#fff; padding:16px 18px; margin-bottom:14px; box-shadow:0 2px 6px rgba(23,33,27,.04); display:flex; flex-direction:column; gap:12px; transition:border-color .15s ease, box-shadow .15s ease; }
+    .job:hover { border-color:#bec9bf; box-shadow:0 4px 12px rgba(23,33,27,.07); }
     .job > div { min-width:0; }
-    .job:first-child { border-top:0; padding-top:0; }
-    .job strong { display:block; font-size:1.08rem; }
-    .job small { color:var(--muted); font-family:system-ui,sans-serif; }
-    .status { align-self:start; color:var(--accent-dark); background:#dceee5; padding:4px 8px; border-radius:20px; font:700 .72rem system-ui,sans-serif; white-space:nowrap; }
-    .status[data-status="aguardando_conexao"] { color:var(--warn); background:#f7e7c9; }
-    .status[data-status="erro"] { color:var(--danger); background:#f7d9d4; }
-    .status[data-status="convertendo"] { color:#245b78; background:#d9edf7; }
-    .status[data-status="cancelado"] { color:#5f6368; background:#e5e7e9; }
-    .status[data-status="sem_gravacoes"] { color:#6b5a26; background:#f5edc8; }
+    .job-conteudo { display:flex; flex-direction:column; gap:12px; min-width:0; width:100%; }
+    .job-cabecalho { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding-bottom:10px; border-bottom:1px solid #f1f5f9; }
+    .job-titulo-wrap { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+    .job-escola-titulo { font:700 1.05rem/1.2 system-ui,-apple-system,sans-serif; color:var(--ink); margin:0; }
+    .status { display:inline-flex; align-items:center; padding:4px 10px; border-radius:20px; font:700 .74rem/1.2 system-ui,-apple-system,sans-serif; white-space:nowrap; text-transform:uppercase; letter-spacing:.03em; border:1px solid transparent; color:var(--accent-dark); background:#dceee5; }
+    .status[data-status="concluido"] { color:#166534; background:#dcfce7; border-color:#86efac; }
+    .status[data-status="baixando"] { color:#1d4ed8; background:#dbeafe; border-color:#93c5fd; }
+    .status[data-status="buscando"] { color:#0369a1; background:#e0f2fe; border-color:#bae6fd; }
+    .status[data-status="convertendo"] { color:#0f766e; background:#ccfbf1; border-color:#99f6e4; }
+    .status[data-status="novo"] { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
+    .status[data-status="aguardando_conexao"] { color:var(--warn); background:#fef3c7; border-color:#fde68a; }
+    .status[data-status="erro"] { color:var(--danger); background:#fee2e2; border-color:#fca5a5; }
+    .status[data-status="cancelado"] { color:#5f6368; background:#e5e7e9; border-color:#cbd5e1; }
+    .status[data-status="sem_gravacoes"] { color:#78350f; background:#fef3c7; border-color:#fde68a; }
+    .job-detalhes { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px 14px; padding:10px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-family:system-ui,-apple-system,sans-serif; font-size:.83rem; }
+    .job-detalhe-linha { display:flex; gap:6px; align-items:baseline; min-width:0; line-height:1.35; }
+    .job-detalhe-rotulo { font-weight:700; color:var(--muted); font-size:.73rem; text-transform:uppercase; letter-spacing:.03em; flex-shrink:0; }
+    .job-detalhe-valor { color:var(--ink); word-break:break-word; min-width:0; }
+    .job-detalhe-linha.completa { grid-column:1 / -1; }
+    .job-progresso-bloco { display:flex; flex-direction:column; gap:6px; }
+    .job-progresso-bloco .progress-label { margin-top:0; }
+    .job-progresso-sub { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; font:500 .78rem/1.3 system-ui,-apple-system,sans-serif; color:var(--muted); }
+    .job-caixa-erro { background:#fef2f2; border:1px solid #fca5a5; border-left:4px solid var(--danger); border-radius:6px; padding:10px 14px; font-family:system-ui,-apple-system,sans-serif; font-size:.85rem; }
+    .job-caixa-erro.sem-gravacoes { background:#fefce8; border-color:#fde047; border-left-color:var(--warn); color:#713f12; }
+    .job-erro-titulo { font-weight:700; font-size:.84rem; color:#991b1b; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+    .job-caixa-erro.sem-gravacoes .job-erro-titulo { color:#854d0e; }
+    .job-erro-linha { display:flex; gap:6px; margin-top:4px; line-height:1.35; }
+    .job-erro-rotulo { color:#991b1b; font-weight:700; font-size:.8rem; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap; }
+    .job-caixa-erro.sem-gravacoes .job-erro-rotulo { color:#854d0e; }
+    .job-erro-texto { color:#7f1d1d; word-break:break-word; }
+    .job-caixa-erro.sem-gravacoes .job-erro-texto { color:#713f12; }
+    .job-erro-sub { margin-top:6px; color:#991b1b; font-size:.78rem; opacity:.9; }
+    .btn-remover-finalizadas { width:auto; min-height:32px; margin:0; padding:5px 12px; background:#fff; color:var(--muted); border:1px solid #bec9bf; border-radius:4px; font:600 .78rem/1.2 system-ui,-apple-system,sans-serif; cursor:pointer; display:inline-flex; align-items:center; gap:5px; transition:all .15s ease; }
+    .btn-remover-finalizadas:hover:not(:disabled) { border-color:var(--danger); color:var(--danger); background:#fdf2f0; transform:translateY(-1px); }
+    .btn-remover-finalizadas:disabled { opacity:.5; cursor:not-allowed; transform:none; background:#f9fafb; border-color:#e5e7eb; color:#9ca3af; }
     .job-time { display:block; overflow-wrap:anywhere; word-break:break-word; max-width:100%; margin:3px 0; }
     .progress-label { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; margin-top:12px; color:var(--muted); font:700 .75rem system-ui,sans-serif; }
     .progress-label span { min-width:0; overflow-wrap:anywhere; }
@@ -82,14 +109,14 @@
     .job-error { color:var(--danger); font: .85rem system-ui,sans-serif; margin:8px 0 0; }
     .worker-health { margin:0 0 12px; color:var(--muted); font:600 .78rem system-ui,sans-serif; }
     .worker-health.erro { color:var(--danger); }
-    .videos { margin-top:14px; font-family:system-ui,sans-serif; }
+    .videos { margin-top:10px; font-family:system-ui,sans-serif; }
     .videos summary { color:var(--accent-dark); cursor:pointer; font-weight:700; }
     .video-item { border-top:1px solid var(--line); margin-top:10px; padding-top:10px; }
     .video-item small { display:block; margin-bottom:6px; }
     video { display:block; width:min(100%, 520px); background:#101513; }
-    .cancelar { width:auto; min-height:34px; margin-top:12px; padding:6px 10px; border-color:var(--danger); background:transparent; color:var(--danger); font-size:.85rem; }
+    .cancelar { width:auto; min-height:34px; margin-top:0; padding:6px 12px; border-color:var(--danger); background:transparent; color:var(--danger); font-size:.84rem; font-weight:700; border-radius:4px; }
     .cancelar:hover { background:#f7d9d4; }
-    .excluir { width:auto; min-height:30px; margin-top:8px; padding:4px 8px; border-color:#bec9bf; background:transparent; color:var(--muted); font-size:.78rem; border-radius:3px; }
+    .excluir { width:auto; min-height:30px; margin-top:0; padding:5px 10px; border-color:#bec9bf; background:transparent; color:var(--muted); font-size:.78rem; font-weight:600; border-radius:4px; }
     .excluir:hover { border-color:var(--danger); color:var(--danger); background:#fdf2f0; }
     .filtros { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
     .btn-filtro { width:auto; min-height:30px; padding:4px 10px; border:1px solid #bec9bf; background:#fff; color:var(--muted); font:600 .78rem system-ui,sans-serif; border-radius:15px; cursor:pointer; margin-top:0; }
@@ -163,6 +190,36 @@
     .badge-ip-sem { background:#fef3c7; color:#92400e; font-weight:700; font-size:.74rem; padding:3px 8px; border-radius:10px; display:inline-flex; align-items:center; gap:4px; border:1px solid #fde68a; }
     .badge-ip-sem:hover { background:#fde68a; color:#78350f; transform:translateY(-1px); box-shadow:0 1px 3px rgba(0,0,0,0.08); }
 
+    /* Menu dropdown do card de atividade */
+    .job-cabecalho-acoes { display:flex; align-items:center; gap:8px; }
+    .job-menu-wrap { position:relative; display:inline-flex; align-items:center; }
+    .btn-job-menu { width:32px; min-height:32px; padding:0; margin:0; border:1px solid transparent; background:transparent; border-radius:6px; color:var(--muted); font-size:1.25rem; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; line-height:1; transition:all .15s ease; }
+    .btn-job-menu:hover, .btn-job-menu.ativo { background:#f1f5f9; border-color:#cbd5e1; color:var(--ink); }
+    .job-menu-dropdown { position:absolute; right:0; top:calc(100% + 4px); background:#fff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 8px 24px rgba(15,23,42,.12); z-index:50; min-width:220px; display:none; flex-direction:column; padding:4px 0; overflow:hidden; }
+    .job-menu-dropdown.aberto { display:flex; }
+    .job-menu-item { background:none; border:none; text-align:left; padding:9px 14px; font:600 .82rem system-ui,-apple-system,sans-serif; color:var(--ink); cursor:pointer; width:100%; min-height:auto; margin:0; display:flex; align-items:center; gap:8px; border-radius:0; white-space:nowrap; transition:background .12s ease; }
+    .job-menu-item:hover { background:#f8fafc; color:var(--accent-dark); }
+    .job-menu-item.item-retry { color:#1e40af; }
+    .job-menu-item.item-retry:hover { background:#eff6ff; }
+
+    /* Painel de Armazenamento */
+    .card-pasta-armazenamento { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px 18px; margin-bottom:20px; box-shadow:0 2px 6px rgba(0,0,0,0.02); }
+    .card-pasta-armazenamento .caminho-pasta { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:.88rem; background:#f8fafc; padding:6px 10px; border-radius:4px; border:1px solid #e2e8f0; display:inline-block; word-break:break-all; }
+    .barra-disco-wrap { background:#e2e8f0; border-radius:6px; height:14px; overflow:hidden; margin:8px 0; position:relative; }
+    .barra-disco-preenchimento { height:100%; transition:width .4s ease, background-color .4s ease; border-radius:6px; }
+    .barra-disco-preenchimento.ok { background:var(--accent); }
+    .barra-disco-preenchimento.alerta { background:#eab308; }
+    .barra-disco-preenchimento.perigo { background:var(--danger); }
+    .tabela-armazenamento { width:100%; border-collapse:collapse; font-family:system-ui,sans-serif; font-size:.85rem; }
+    .tabela-armazenamento th { background:#f9fafb; text-align:left; padding:10px 12px; font-size:.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); border-bottom:1px solid var(--line); }
+    .tabela-armazenamento td { padding:10px 12px; border-bottom:1px solid #f0f3ee; vertical-align:middle; }
+    .tabela-armazenamento tr:hover td { background:#fafafa; }
+    .badge-retencao { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; font-size:.74rem; font-weight:700; white-space:nowrap; }
+    .badge-retencao.alerta { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+    .badge-retencao.normal { background:#f1f5f9; color:#475569; }
+    .btn-excluir-gravacao { width:auto; min-height:28px; margin:0; padding:3px 9px; font-size:.75rem; border:1px solid #cbd5e1; background:#fff; color:var(--danger); border-radius:4px; cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:4px; transition:all .15s ease; }
+    .btn-excluir-gravacao:hover { background:#fee2e2; border-color:#fca5a5; }
+
     @media (max-width:760px) { main { padding-top:25px; } header, .layout { display:block; } header p { margin-top:14px; } section { margin-top:18px; } .card-contador { margin-top:14px; justify-content:center; } }
   </style>
 </head>
@@ -172,7 +229,7 @@
     <div class="header-brand">
       <div class="header-logo" aria-hidden="true">📹</div>
       <div>
-        <span class="header-tag">Projeto Onda • Monitoramento Escolar</span>
+        <span class="header-tag">Projeto Onda 2.0</span>
         <h1>Central de Gravações</h1>
         <p>Cadastre um período ou acompanhe pedidos em tempo real. O trabalhador baixa em segundo plano sem precisar manter a página aberta.</p>
       </div>
@@ -193,6 +250,7 @@
       <span id="badge-telegram" class="badge-pendente" style="display:none;">0</span>
     </button>
     <button type="button" class="btn-aba" data-alvo="painel-estatisticas">📊 Estatísticas</button>
+    <button type="button" class="btn-aba" data-alvo="painel-armazenamento">💾 Armazenamento</button>
   </nav>
 
   <div id="painel-downloads">
@@ -276,9 +334,9 @@
         </div>
         <label for="modo_download">Protocolo de Download</label>
         <select id="modo_download" name="modo_download" style="width:100%; height:40px; padding:8px; border:1px solid #bec9bf; border-radius:3px; background:#fff; margin-bottom:12px; font-size:.9rem;">
-          <option value="auto" selected>Automático (SDK Porta 8000 + Fallback ISAPI Porta 80)</option>
-          <option value="sdk">SDK Nativo (Porta 8000 - igual ao WD Desk)</option>
-          <option value="isapi">ISAPI Web (Porta 80 HTTP)</option>
+          <option value="auto" selected>AUTO</option>
+          <option value="sdk">SDK</option>
+          <option value="isapi">ISAPI WEB</option>
         </select>
         <button id="enviar" type="submit">Adicionar ao trabalhador</button>
         <div class="aviso-rocket" style="margin-top:14px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; color:#1e40af; font-weight:700; text-align:center; font-family:system-ui,sans-serif; font-size:.92rem; box-shadow:0 1px 3px rgba(30,64,175,0.08);">
@@ -288,8 +346,9 @@
       </form>
     </section>
     <section>
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; flex-wrap:wrap;">
         <h2 style="margin:0;">Atividade recente</h2>
+        <button type="button" id="btn-remover-finalizadas" class="btn-remover-finalizadas" title="Remover da lista todas as atividades concluídas, com erro ou canceladas" disabled>🗑️ Remover finalizadas</button>
       </div>
       <p id="saude" class="worker-health">Verificando trabalhador...</p>
       <div class="filtros">
@@ -438,6 +497,111 @@
     </details>
   </section>
 
+  <!-- Painel de Armazenamento -->
+  <section id="painel-armazenamento" style="display:none; background:rgba(255,253,248,.84); border:1px solid var(--line); box-shadow:0 12px 35px rgba(23,33,27,.07); padding:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin:0 0 2px;">Armazenamento de Gravações</h2>
+        <p style="margin:0; font-size:.88rem; color:var(--muted);">Gestão de disco, retenção automática e exclusão de vídeos baixados.</p>
+      </div>
+      <div>
+        <button type="button" id="btn-recarregar-armazenamento" style="width:auto; min-height:36px; padding:6px 14px; margin-top:0; background:#fff; color:var(--ink); border:1px solid #bec9bf; font-size:.85rem; cursor:pointer;">🔄 Atualizar</button>
+      </div>
+    </div>
+
+    <div id="status-armazenamento-erro" style="display:none; margin-bottom:16px;" class="job-caixa-erro">
+      <div class="job-erro-titulo">⚠️ Erro ao acessar armazenamento</div>
+      <div class="job-erro-linha">
+        <span id="status-armazenamento-erro-msg" class="job-erro-texto"></span>
+      </div>
+    </div>
+
+    <!-- Card da Pasta e Status de Acesso -->
+    <div class="card-pasta-armazenamento">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <strong style="font-size:.95rem;">📁 Pasta de Destino:</strong>
+          <span id="armazenamento-status-badge" class="badge-status-dvr verificando">
+            <span id="armazenamento-status-dot" class="bolinha-status verificando"></span>
+            <span id="armazenamento-status-texto">Verificando...</span>
+          </span>
+        </div>
+        <small style="color:var(--muted);">Pasta local ou compartilhada de rede</small>
+      </div>
+      <div>
+        <code id="armazenamento-caminho-pasta" class="caminho-pasta">Carregando caminho...</code>
+      </div>
+
+      <!-- Barra de Uso do Disco -->
+      <div style="margin-top:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:.82rem; font-family:system-ui,sans-serif; margin-bottom:4px;">
+          <span><strong>Uso do Disco:</strong> <span id="armazenamento-disco-info">-- GB usado de -- GB (--% em uso)</span></span>
+          <span id="armazenamento-disco-livre" style="font-weight:700; color:var(--muted);">-- GB livre</span>
+        </div>
+        <div class="barra-disco-wrap">
+          <div id="armazenamento-barra-disco" class="barra-disco-preenchimento ok" style="width:0%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPIs de Armazenamento -->
+    <div class="grid-stats-kpi">
+      <div class="card-kpi">
+        <div class="kpi-icon">🎬</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Total de Gravações</span>
+          <strong id="arm-kpi-total-gravacoes" class="kpi-valor">0</strong>
+          <small id="arm-kpi-sub-gravacoes" class="kpi-sub">-- arquivos no disco</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">💽</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Espaço Ocupado</span>
+          <strong id="arm-kpi-espaco-ocupado" class="kpi-valor" style="color:var(--accent-dark);">0 MB</strong>
+          <small class="kpi-sub">Por gravações baixadas</small>
+        </div>
+      </div>
+
+      <div class="card-kpi">
+        <div class="kpi-icon">⏳</div>
+        <div class="kpi-corpo">
+          <span class="kpi-label">Política de Retenção</span>
+          <strong id="arm-kpi-retencao-dias" class="kpi-valor" style="font-size:1.35rem;">-- dias</strong>
+          <small id="arm-kpi-retencao-status" class="kpi-sub">Exclusão automática --</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabela de Gravações -->
+    <div style="background:#fff; border:1px solid var(--line); border-radius:8px; padding:18px 20px; box-shadow:0 2px 6px rgba(0,0,0,0.02);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+        <h3 style="margin:0; font-size:1.05rem; color:var(--ink);">📼 Gravações Armazenadas</h3>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <input type="text" id="filtro-tabela-armazenamento" placeholder="🔍 Filtrar por job, câmera ou arquivo..." style="max-width:320px; min-height:36px; padding:6px 12px; font-size:.85rem; border-radius:4px; margin:0;">
+        </div>
+      </div>
+
+      <div style="overflow-x:auto; max-height:500px; border:1px solid var(--line); border-radius:4px;">
+        <table class="tabela-armazenamento">
+          <thead style="position:sticky; top:0; z-index:2;">
+            <tr>
+              <th>Arquivo</th>
+              <th style="width:110px;">Tamanho</th>
+              <th style="width:130px;">Baixada há</th>
+              <th style="width:170px;">Expira em</th>
+              <th style="width:90px; text-align:right;">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="corpo-tabela-armazenamento">
+            <tr><td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">Carregando gravações...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <footer style="margin-top:40px; text-align:center; padding:22px 0; border-top:1px solid var(--line); color:var(--muted); font-family:system-ui,sans-serif; font-size:.95rem;">
     <strong style="color:var(--ink);">Sempre confira os dados no ROCKET 🚀</strong>
   </footer>
@@ -453,6 +617,30 @@
   let todosJobs = [];
   let filtroAtual = 'todos';
   let estadoWorker = null;
+  let menuAbertoJobId = null;
+
+  function formatarIsoParaDatetimeLocal(isoStr) {
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr);
+      if (Number.isNaN(d.getTime())) return '';
+      const dtf = new Intl.DateTimeFormat('en-US', {
+        timeZone: fusoEmpresa || 'America/Cuiaba',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const partes = {};
+      dtf.formatToParts(d).forEach(p => { partes[p.type] = p.value; });
+      let hora = partes.hour === '24' ? '00' : partes.hour;
+      return `${partes.year}-${partes.month}-${partes.day}T${hora}:${partes.minute}`;
+    } catch {
+      return '';
+    }
+  }
 
   const iso = valor => {
     const comOffset = valor.length === 16 ? `${valor}:00${fusoOffset}` : `${valor}${fusoOffset}`;
@@ -485,7 +673,109 @@
     return Number.isNaN(data.getTime()) ? valor : data.toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short', timeZone:fusoEmpresa });
   };
 
+  function formatarModoDownload(modo) {
+    const m = (modo || 'auto').toLowerCase();
+    if (m === 'isapi') return 'ISAPI WEB';
+    if (m === 'sdk') return 'SDK';
+    return 'AUTO';
+  }
+
+  function formatarProtocoloEfetivo(proto) {
+    if (!proto) return '';
+    const p = String(proto).trim().toLowerCase();
+    if (p === 'isapi') return 'ISAPI WEB';
+    if (p === 'sdk') return 'SDK';
+    return proto.toUpperCase();
+  }
+
+  function renderizarCaixaErro(job) {
+    const temErro = job.status === 'erro' || Boolean(job.erro_detalhe) || Boolean(job.erro_atual) || job.status === 'sem_gravacoes';
+    if (!temErro) return '';
+
+    if (job.status === 'sem_gravacoes') {
+      return `
+        <div class="job-caixa-erro sem-gravacoes">
+          <div class="job-erro-titulo">⚠️ Nenhuma gravação encontrada</div>
+          <div class="job-erro-linha">
+            <span class="job-erro-texto">Nenhuma gravação encontrada no período solicitado. Confira IP, câmeras, data e fuso horário da DVR.</span>
+          </div>
+        </div>
+      `;
+    }
+
+    const detalhe = job.erro_detalhe || job.erro_atual || '';
+    if (!detalhe && job.status === 'erro') {
+      return `
+        <div class="job-caixa-erro">
+          <div class="job-erro-titulo">⚠️ Falha no Download</div>
+          <div class="job-erro-linha">
+            <span class="job-erro-texto">O download falhou. Verifique a conectividade da DVR e tente novamente.</span>
+          </div>
+        </div>
+      `;
+    }
+
+    let htmlDetalhe = '';
+    if (detalhe.includes(' | ')) {
+      const partes = detalhe.split(' | ');
+      let causa = '';
+      let sugestao = '';
+
+      partes.forEach(p => {
+        const pTrim = p.trim();
+        const matchCausa = pTrim.match(/^causa:\s*(.*)$/i);
+        const matchSugestao = pTrim.match(/^sugest[aã]o:\s*(.*)$/i);
+        if (matchCausa) {
+          causa = matchCausa[1];
+        } else if (matchSugestao) {
+          sugestao = matchSugestao[1];
+        } else {
+          if (!causa) causa = pTrim;
+          else if (!sugestao) sugestao = pTrim;
+          else sugestao += ' | ' + pTrim;
+        }
+      });
+
+      htmlDetalhe = `
+        <div class="job-erro-linha">
+          <strong class="job-erro-rotulo">Causa:</strong>
+          <span class="job-erro-texto">${causa || partes[0].replace(/^causa:\s*/i, '')}</span>
+        </div>
+        <div class="job-erro-linha">
+          <strong class="job-erro-rotulo">Sugestão:</strong>
+          <span class="job-erro-texto">${sugestao || (partes[1] ? partes[1].replace(/^sugest[aã]o:\s*/i, '') : '')}</span>
+        </div>
+      `;
+    } else {
+      // Trata o caso sem esse formato exibindo o texto inteiro
+      htmlDetalhe = `
+        <div class="job-erro-linha">
+          <strong class="job-erro-rotulo">Detalhe:</strong>
+          <span class="job-erro-texto">${detalhe}</span>
+        </div>
+      `;
+    }
+
+    const erroTrecho = (job.erro_atual && job.erro_atual !== detalhe)
+      ? `<div class="job-erro-sub"><small>Última falha de trecho: ${job.erro_atual}</small></div>`
+      : '';
+
+    return `
+      <div class="job-caixa-erro">
+        <div class="job-erro-titulo">⚠️ Falha no Download</div>
+        ${htmlDetalhe}
+        ${erroTrecho}
+      </div>
+    `;
+  }
+
   function renderizarJobs() {
+    const btnRemoverFinalizadas = document.querySelector('#btn-remover-finalizadas');
+    if (btnRemoverFinalizadas) {
+      const temFinalizadas = (todosJobs || []).some(j => ['concluido', 'cancelado', 'sem_gravacoes', 'erro'].includes(j.status));
+      btnRemoverFinalizadas.disabled = !temFinalizadas;
+    }
+
     let lista = todosJobs;
     if (filtroAtual === 'ativos') {
       lista = todosJobs.filter(j => ['novo', 'buscando', 'baixando', 'convertendo', 'aguardando_conexao'].includes(j.status));
@@ -528,13 +818,7 @@
         const divConteudo = document.createElement('div');
         divConteudo.className = 'job-conteudo';
 
-        const spanStatus = document.createElement('span');
-        spanStatus.className = 'status';
-        spanStatus.dataset.status = job.status;
-        spanStatus.textContent = job.status;
-
         article.appendChild(divConteudo);
-        article.appendChild(spanStatus);
       }
 
       // Garante que o artigo esteja na posição ordenada correta sem desconectar elementos do DOM
@@ -543,13 +827,11 @@
         jobs.insertBefore(article, filhoAtual || null);
       }
 
-      const spanStatus = article.querySelector('.status');
-      if (spanStatus) {
-        spanStatus.dataset.status = job.status;
-        spanStatus.textContent = job.status;
-      }
+      // Remove status direto legado se existir
+      const spanStatusLegado = article.querySelector(':scope > .status');
+      if (spanStatusLegado) spanStatusLegado.remove();
 
-      const divConteudo = article.querySelector('.job-conteudo') || article.firstElementChild;
+      const divConteudo = article.querySelector('.job-conteudo') || article;
 
       const dvrOfflineNoJob = ['aguardando_conexao', 'erro'].includes(job.status);
       const classeBolinhaJob = dvrOfflineNoJob ? 'offline' : 'online';
@@ -557,28 +839,95 @@
         ? 'DVR Offline / Aguardando reconexão'
         : 'DVR Online / Conectada';
       const botaoRocketJob = job.codigo_escola
-        ? `<a class="btn-rocket-mini" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(job.codigo_escola)}" target="_blank" rel="noopener noreferrer" title="Abrir unidade ${job.codigo_escola} no Rocket">🚀 ${job.codigo_escola} - ${job.escola || 'Unidade'}</a>`
+        ? `<a class="btn-rocket-mini" href="https://org.rocket.sasi.io/protected/sites?q=${encodeURIComponent(job.codigo_escola)}" target="_blank" rel="noopener noreferrer" title="Abrir unidade ${job.codigo_escola} no Rocket">🚀 ${job.codigo_escola}</a>`
         : '';
 
+      const rotulosStatus = {
+        novo: 'Novo',
+        buscando: 'Buscando',
+        baixando: 'Baixando',
+        convertendo: 'Convertendo',
+        concluido: 'Concluído',
+        erro: 'Erro',
+        cancelado: 'Cancelado',
+        sem_gravacoes: 'Sem gravações',
+        aguardando_conexao: 'Aguardando conexão'
+      };
+      const rotuloStatus = rotulosStatus[job.status] || job.status;
+
+      const modoConfig = formatarModoDownload(job.modo_download);
+      const protoEfetivo = formatarProtocoloEfetivo(job.protocolo_ativo);
+      const textoProtocolo = protoEfetivo
+        ? `${modoConfig} (efetivo: ${protoEfetivo})`
+        : modoConfig;
+
+      const dataCriado = job.criado_em ? mostrarData(job.criado_em) : '--';
+      const dataIniciado = job.iniciado_em ? mostrarData(job.iniciado_em) : '--';
+      const dataFinalizado = job.finalizado_em ? mostrarData(job.finalizado_em) : '--';
+
+      const textoTempo = job.status === 'cancelado'
+        ? `Tempo decorrido: ${formatDuration(job.tempo_segundos)} (Cancelado)`
+        : (job.status === 'concluido'
+          ? `Tempo total: ${formatDuration(job.tempo_segundos)} (Concluído)`
+          : `Tempo: ${formatDuration(job.tempo_segundos)} • Restante: ${formatDuration(job.segundos_restantes)}`);
+
+      const caixaErroHtml = renderizarCaixaErro(job);
+
       const htmlInfo = `
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:3px;">
-          <span class="bolinha-status ${classeBolinhaJob}" title="${tituloBolinhaJob}"></span>
-          <strong style="display:inline;">${job.escola || job.dvr_ip}</strong>
-          ${botaoRocketJob}
+        <div class="job-cabecalho">
+          <div class="job-titulo-wrap">
+            <span class="bolinha-status ${classeBolinhaJob}" title="${tituloBolinhaJob}"></span>
+            <strong class="job-escola-titulo">${job.escola || job.dvr_ip}</strong>
+            ${botaoRocketJob}
+          </div>
+          <div class="job-cabecalho-acoes">
+            <span class="status" data-status="${job.status}">${rotuloStatus}</span>
+            <div class="job-menu-wrap">
+              <button type="button" class="btn-job-menu ${menuAbertoJobId === jobIdStr ? 'ativo' : ''}" data-job-id="${job.id}" title="Mais opções" aria-haspopup="true" aria-expanded="${menuAbertoJobId === jobIdStr}">⋮</button>
+              <div class="job-menu-dropdown ${menuAbertoJobId === jobIdStr ? 'aberto' : ''}" data-job-id="${job.id}">
+                ${job.status === 'erro' ? `<button type="button" class="job-menu-item item-retry" data-job-id="${job.id}">🔁 Tentar novamente</button>` : ''}
+                <button type="button" class="job-menu-item item-reutilizar" data-job-id="${job.id}">✏️ Reutilizar dados / Editar pedido</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <small>codigo ${job.codigo_escola || '-'} | ${job.dvr_ip} | cameras ${job.cameras} | modo: <strong>${(job.modo_download || 'auto').toUpperCase()}${job.protocolo_ativo ? ` (${job.protocolo_ativo})` : ''}</strong>
-        <span class="job-time">${mostrarData(job.data_inicio)} ate ${mostrarData(job.data_fim)}</span>
-        ${job.trechos_concluidos}/${job.trechos_total} trechos | ${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)}${job.trechos_erro ? ` | ${job.trechos_erro} com erro` : ''}</small>
-        <div class="progress-label">
-          <span>${formatBytes(job.bytes_baixados)} / ${formatBytes(job.bytes_total)} (${job.progresso_percentual}%)</span>
-          <span>${formatSpeed(job.bytes_por_segundo)}</span>
+
+        <div class="job-detalhes">
+          <div class="job-detalhe-linha">
+            <span class="job-detalhe-rotulo">DVR / IP:</span>
+            <span class="job-detalhe-valor">${job.dvr_ip}${job.porta_sdk ? ` : ${job.porta_sdk}` : ''}</span>
+          </div>
+          <div class="job-detalhe-linha">
+            <span class="job-detalhe-rotulo">Câmeras:</span>
+            <span class="job-detalhe-valor">${job.cameras || '-'}</span>
+          </div>
+          <div class="job-detalhe-linha">
+            <span class="job-detalhe-rotulo">Período:</span>
+            <span class="job-detalhe-valor">${mostrarData(job.data_inicio)} até ${mostrarData(job.data_fim)}</span>
+          </div>
+          <div class="job-detalhe-linha">
+            <span class="job-detalhe-rotulo">Protocolo:</span>
+            <span class="job-detalhe-valor">${textoProtocolo}</span>
+          </div>
+          <div class="job-detalhe-linha completa">
+            <span class="job-detalhe-rotulo">Datas:</span>
+            <span class="job-detalhe-valor">Criado: ${dataCriado} • Iniciado: ${dataIniciado} • Finalizado: ${dataFinalizado}</span>
+          </div>
         </div>
-        <progress max="100" value="${job.progresso_percentual}"></progress>
-        <small>${job.status === 'cancelado' ? `Tempo decorrido: ${formatDuration(job.tempo_segundos)} | Cancelado` : (job.status === 'concluido' ? `Tempo total: ${formatDuration(job.tempo_segundos)} | Concluido` : `Tempo: ${formatDuration(job.tempo_segundos)} | Restante estimado: ${formatDuration(job.segundos_restantes)}`)}</small>
-        ${job.trecho_atual ? `<div class="progress-label"><span>Trecho atual: camera ${job.camera_atual}</span><span>${job.status === 'erro' ? 'verificar' : job.status}</span></div>` : ''}
-        ${job.erro_atual ? `<p class="job-error">Falha: ${job.erro_atual}</p>` : ''}
-        ${job.erro_detalhe ? `<p class="job-error">Detalhe: ${job.erro_detalhe}</p>` : ''}
-        ${job.status === 'sem_gravacoes' ? '<p class="job-error" style="color:#6b5a26">Nenhuma gravacao encontrada. Confira IP, camera, data e fuso horario da DVR.</p>' : ''}
+
+        <div class="job-progresso-bloco">
+          <div class="progress-label">
+            <span>${formatBytes(job.bytes_baixados)} de ${formatBytes(job.bytes_total)} (${job.progresso_percentual}%) • ${job.trechos_concluidos}/${job.trechos_total} trechos${job.trechos_erro ? ` <span style="color:var(--danger)">(${job.trechos_erro} com erro)</span>` : ''}</span>
+            <span>${formatSpeed(job.bytes_por_segundo)}</span>
+          </div>
+          <progress max="100" value="${job.progresso_percentual}"></progress>
+          <div class="job-progresso-sub">
+            <span>${textoTempo}</span>
+            ${job.trecho_atual ? `<span>Trecho atual: Câmera ${job.camera_atual}</span>` : ''}
+          </div>
+        </div>
+
+        ${caixaErroHtml}
       `;
 
       let elInfo = divConteudo.querySelector('.job-info-bloco');
@@ -594,7 +943,7 @@
       if (!divAcoes) {
         divAcoes = document.createElement('div');
         divAcoes.className = 'job-acoes';
-        divAcoes.style = 'display:flex; gap:8px; align-items:center; margin-top:8px;';
+        divAcoes.style = 'display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;';
         divConteudo.appendChild(divAcoes);
       }
       const acoesHtml = `
@@ -714,12 +1063,163 @@
     });
   });
 
+  function fecharMenuJobs() {
+    menuAbertoJobId = null;
+    document.querySelectorAll('.job-menu-dropdown.aberto').forEach(dd => dd.classList.remove('aberto'));
+    document.querySelectorAll('.btn-job-menu.ativo').forEach(b => b.classList.remove('ativo'));
+  }
+
+  document.addEventListener('click', evento => {
+    if (!evento.target.closest('.job-menu-wrap')) {
+      fecharMenuJobs();
+    }
+  });
+
+  document.addEventListener('keydown', evento => {
+    if (evento.key === 'Escape') {
+      fecharMenuJobs();
+    }
+  });
+
+  async function retryJob(jobId) {
+    fecharMenuJobs();
+    mensagem.style.color = 'var(--muted)';
+    mensagem.textContent = `Reiniciando pedido #${jobId}...`;
+    try {
+      const resposta = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+      const retorno = await resposta.json();
+      if (!resposta.ok) throw new Error(retorno.erro || 'Falha ao tentar novamente');
+      mensagem.style.color = 'var(--accent-dark)';
+      mensagem.textContent = `Pedido #${jobId} reiniciado com sucesso!`;
+      await atualizarJobs();
+    } catch (erro) {
+      mensagem.style.color = 'var(--danger)';
+      mensagem.textContent = erro.message;
+    }
+  }
+
+  function reutilizarDadosJob(jobId) {
+    fecharMenuJobs();
+    const job = todosJobs.find(j => String(j.id) === String(jobId));
+    if (!job) return;
+
+    const btnAbaDownloads = document.querySelector('.btn-aba[data-alvo="painel-downloads"]');
+    if (btnAbaDownloads && !btnAbaDownloads.classList.contains('ativa')) {
+      btnAbaDownloads.click();
+    }
+
+    if (job.codigo_escola && mapaEscolasPorCodigo.has(job.codigo_escola)) {
+      aplicarEscola(mapaEscolasPorCodigo.get(job.codigo_escola));
+    } else if (job.codigo_escola && inputCodigo) {
+      inputCodigo.value = job.codigo_escola;
+    }
+
+    if (job.codigo_escola && inputCodigo) inputCodigo.value = job.codigo_escola;
+    if (job.escola && inputEscola) inputEscola.value = job.escola;
+    if (job.dvr_ip && inputIp) inputIp.value = job.dvr_ip;
+    if (job.porta_sdk && document.querySelector('#porta_sdk')) {
+      document.querySelector('#porta_sdk').value = job.porta_sdk;
+    }
+    if (job.usuario && inputUsuario) {
+      inputUsuario.value = job.usuario;
+    }
+    if (job.senha && inputSenha) {
+      inputSenha.value = job.senha;
+    }
+    if (job.cameras && inputCameras) {
+      inputCameras.value = job.cameras;
+      if (inputCanaisDvr?.value) {
+        renderizarChipsCanais(inputCanaisDvr.value);
+      }
+    }
+
+    const inputIni = document.querySelector('#data_inicio');
+    const inputFim = document.querySelector('#data_fim');
+    if (inputIni && job.data_inicio) {
+      inputIni.value = formatarIsoParaDatetimeLocal(job.data_inicio);
+    }
+    if (inputFim && job.data_fim) {
+      inputFim.value = formatarIsoParaDatetimeLocal(job.data_fim);
+    }
+
+    const selModo = document.querySelector('#modo_download');
+    if (selModo && job.modo_download) {
+      selModo.value = job.modo_download.toLowerCase();
+    }
+
+    agendarVerificacaoStatusDvr(50);
+    formulario.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    mensagem.style.color = 'var(--accent-dark)';
+    mensagem.textContent = `Dados carregados do pedido #${job.id} — ajuste o que for necessário.`;
+  }
+
   jobs.addEventListener('click', evento => {
+    const btnMenu = evento.target.closest('.btn-job-menu');
+    if (btnMenu) {
+      evento.stopPropagation();
+      const jobId = String(btnMenu.dataset.jobId);
+      menuAbertoJobId = (menuAbertoJobId === jobId) ? null : jobId;
+      document.querySelectorAll('.job-menu-dropdown').forEach(dd => {
+        const ddJobId = String(dd.dataset.jobId);
+        const deveAbrir = (ddJobId === menuAbertoJobId);
+        dd.classList.toggle('aberto', deveAbrir);
+        const btn = dd.closest('.job-menu-wrap')?.querySelector('.btn-job-menu');
+        if (btn) btn.classList.toggle('ativo', deveAbrir);
+      });
+      return;
+    }
+
+    const itemRetry = evento.target.closest('.item-retry');
+    if (itemRetry) {
+      evento.stopPropagation();
+      retryJob(itemRetry.dataset.jobId);
+      return;
+    }
+
+    const itemReutilizar = evento.target.closest('.item-reutilizar');
+    if (itemReutilizar) {
+      evento.stopPropagation();
+      reutilizarDadosJob(itemReutilizar.dataset.jobId);
+      return;
+    }
+
     const botaoCancelar = evento.target.closest('.cancelar');
     if (botaoCancelar) cancelarJob(botaoCancelar.dataset.jobId);
     const botaoExcluir = evento.target.closest('.excluir');
     if (botaoExcluir) excluirJob(botaoExcluir.dataset.jobId);
   });
+
+  const btnRemoverFinalizadas = document.querySelector('#btn-remover-finalizadas');
+  if (btnRemoverFinalizadas) {
+    btnRemoverFinalizadas.addEventListener('click', async () => {
+      const confirmou = window.confirm(
+        'Deseja remover as atividades finalizadas da lista?\n\n' +
+        '• Serão removidas apenas atividades concluídas, com erro ou canceladas.\n' +
+        '• Atividades em andamento ou na fila NÃO serão removidas.\n' +
+        '• Todas as estatísticas e métricas históricas são preservadas.'
+      );
+      if (!confirmou) return;
+
+      try {
+        btnRemoverFinalizadas.disabled = true;
+        const resposta = await fetch('/api/jobs/finalizados', { method: 'DELETE' });
+        const dados = await resposta.json();
+        if (!resposta.ok) {
+          throw new Error(dados.erro || 'Falha ao remover atividades finalizadas');
+        }
+        const removidos = dados.removidos !== undefined ? dados.removidos : 0;
+        const protegidos = dados.protegidos !== undefined ? dados.protegidos : 0;
+        const msgResultado = `${removidos} removidas, ${protegidos} em andamento preservadas`;
+        alert(msgResultado);
+        if (mensagem) mensagem.textContent = msgResultado;
+        await atualizarJobs();
+      } catch (err) {
+        alert('Erro ao remover atividades finalizadas: ' + err.message);
+        if (mensagem) mensagem.textContent = 'Erro: ' + err.message;
+      }
+    });
+  }
 
   const inputCodigo = document.querySelector('#codigo_escola');
   const inputEscola = document.querySelector('#escola');
@@ -1202,6 +1702,7 @@
   const painelDownloads = document.querySelector('#painel-downloads');
   const painelTelegram = document.querySelector('#painel-telegram');
   const painelEstatisticas = document.querySelector('#painel-estatisticas');
+  const painelArmazenamento = document.querySelector('#painel-armazenamento');
   const badgeTelegram = document.querySelector('#badge-telegram');
   const statusTelegramEl = document.querySelector('#telegram-status');
   const listaTelegramEl = document.querySelector('#lista-telegram');
@@ -1216,11 +1717,14 @@
       painelDownloads.style.display = alvo === 'painel-downloads' ? 'block' : 'none';
       painelTelegram.style.display = alvo === 'painel-telegram' ? 'block' : 'none';
       if (painelEstatisticas) painelEstatisticas.style.display = alvo === 'painel-estatisticas' ? 'block' : 'none';
+      if (painelArmazenamento) painelArmazenamento.style.display = alvo === 'painel-armazenamento' ? 'block' : 'none';
 
       if (alvo === 'painel-telegram') {
         atualizarTelegram();
       } else if (alvo === 'painel-estatisticas') {
         atualizarEstatisticas();
+      } else if (alvo === 'painel-armazenamento') {
+        carregarArmazenamento();
       }
     });
   });
@@ -1837,6 +2341,298 @@
     inputFiltroUnidades.addEventListener('input', e => {
       termoBuscaUnidades = e.target.value.trim().toLowerCase();
       filtrarERenderizarTabelaUnidades();
+    });
+  }
+
+  // ==========================================
+  // Controle da Aba de Armazenamento
+  // ==========================================
+  let dadosArmazenamento = null;
+  let termoBuscaArmazenamento = '';
+  let carregandoArmazenamento = false;
+
+  function formatarIdadeHumana(segundos, baixadoEm) {
+    let seg = segundos;
+    if ((seg === null || seg === undefined || Number.isNaN(seg)) && baixadoEm) {
+      const dt = new Date(baixadoEm);
+      if (!Number.isNaN(dt.getTime())) {
+        seg = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 1000));
+      }
+    }
+    if (seg === null || seg === undefined || Number.isNaN(seg)) return '--';
+    if (seg < 60) return 'há poucos segundos';
+    const min = Math.floor(seg / 60);
+    if (min < 60) return `há ${min} min`;
+    const horas = Math.floor(min / 60);
+    if (horas < 24) return `há ${horas} ${horas === 1 ? 'hora' : 'horas'}`;
+    const dias = Math.floor(horas / 24);
+    return `há ${dias} ${dias === 1 ? 'dia' : 'dias'}`;
+  }
+
+  function formatarExpiracao(diasRestantes, avisoExclusao) {
+    if (diasRestantes === null || diasRestantes === undefined) {
+      return '<span style="color:var(--muted);">Sem limite</span>';
+    }
+    let badgeAviso = '';
+    if (avisoExclusao || diasRestantes <= 1) {
+      badgeAviso = `<span class="badge-retencao alerta" title="Próxima de atingir o limite de retenção">⚠️ ${diasRestantes <= 0 ? 'Expira hoje' : 'Será excluída em ≤1 dia'}</span>`;
+    }
+    let textoDias = '';
+    if (diasRestantes > 1) {
+      textoDias = `<span style="font-weight:600;">${Math.round(diasRestantes)} dias</span>`;
+    } else if (diasRestantes > 0) {
+      textoDias = `<span style="font-weight:600;">${Math.round(diasRestantes * 24)} h</span>`;
+    } else {
+      textoDias = `<span style="font-weight:600; color:var(--danger);">Expirada</span>`;
+    }
+    return `<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">${textoDias} ${badgeAviso}</div>`;
+  }
+
+  async function carregarArmazenamento(forcar = false) {
+    if (carregandoArmazenamento) return;
+    carregandoArmazenamento = true;
+
+    const btnRecarregar = document.querySelector('#btn-recarregar-armazenamento');
+    if (btnRecarregar) {
+      btnRecarregar.disabled = true;
+      btnRecarregar.textContent = '🔄 Atualizando...';
+    }
+
+    const caixaErro = document.querySelector('#status-armazenamento-erro');
+    const msgErro = document.querySelector('#status-armazenamento-erro-msg');
+
+    try {
+      const url = forcar ? '/api/armazenamento?forcar=1' : '/api/armazenamento';
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.erro || `Falha ao carregar armazenamento (HTTP ${res.status})`);
+      }
+      dadosArmazenamento = await res.json();
+      if (caixaErro) caixaErro.style.display = 'none';
+      renderizarArmazenamento();
+    } catch (e) {
+      console.warn('Erro ao carregar armazenamento:', e);
+      if (caixaErro && msgErro) {
+        caixaErro.style.display = 'block';
+        msgErro.textContent = e.message || 'Erro de conexão com o servidor.';
+      }
+      const tbody = document.querySelector('#corpo-tabela-armazenamento');
+      if (tbody && (!dadosArmazenamento || !dadosArmazenamento.gravacoes)) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--danger); padding:20px;">Falha ao carregar dados de armazenamento: ${e.message}</td></tr>`;
+      }
+    } finally {
+      carregandoArmazenamento = false;
+      if (btnRecarregar) {
+        btnRecarregar.disabled = false;
+        btnRecarregar.textContent = '🔄 Atualizar';
+      }
+    }
+  }
+
+  function renderizarArmazenamento() {
+    if (!dadosArmazenamento) return;
+    const {
+      pasta,
+      acessivel,
+      erro,
+      disco,
+      total_gravacoes,
+      total_bytes,
+      retencao_dias,
+      retencao_auto,
+      truncado
+    } = dadosArmazenamento;
+
+    // 1. Status da pasta
+    const badgeStatus = document.querySelector('#armazenamento-status-badge');
+    const dotStatus = document.querySelector('#armazenamento-status-dot');
+    const textoStatus = document.querySelector('#armazenamento-status-texto');
+    const caminhoPasta = document.querySelector('#armazenamento-caminho-pasta');
+    const caixaErro = document.querySelector('#status-armazenamento-erro');
+    const msgErro = document.querySelector('#status-armazenamento-erro-msg');
+
+    if (caminhoPasta) caminhoPasta.textContent = pasta || '--';
+
+    const isAcessivel = (acessivel !== false && !erro);
+    if (badgeStatus && dotStatus && textoStatus) {
+      if (isAcessivel) {
+        badgeStatus.className = 'badge-status-dvr online';
+        dotStatus.className = 'bolinha-status online';
+        textoStatus.textContent = 'Acessível';
+      } else {
+        badgeStatus.className = 'badge-status-dvr offline';
+        dotStatus.className = 'bolinha-status offline';
+        textoStatus.textContent = 'Inacessível';
+      }
+    }
+
+    if (!isAcessivel && erro && caixaErro && msgErro) {
+      caixaErro.style.display = 'block';
+      msgErro.textContent = erro;
+    }
+
+    // 2. Barra de uso do disco
+    const elDiscoInfo = document.querySelector('#armazenamento-disco-info');
+    const elDiscoLivre = document.querySelector('#armazenamento-disco-livre');
+    const barraDisco = document.querySelector('#armazenamento-barra-disco');
+
+    if (disco) {
+      const totalBytes = disco.total || 0;
+      const usadoBytes = disco.usado || 0;
+      const livreBytes = disco.livre || 0;
+      const pct = typeof disco.percentual_usado === 'number'
+        ? disco.percentual_usado
+        : (totalBytes > 0 ? (usadoBytes * 100 / totalBytes) : 0);
+      const pctFormatado = pct.toFixed(1);
+
+      if (elDiscoInfo) {
+        elDiscoInfo.textContent = `${formatBytes(usadoBytes)} de ${formatBytes(totalBytes)} (${pctFormatado}%)`;
+      }
+      if (elDiscoLivre) {
+        elDiscoLivre.textContent = `${formatBytes(livreBytes)} livre`;
+      }
+      if (barraDisco) {
+        const pctClamp = Math.min(100, Math.max(0, pct));
+        barraDisco.style.width = `${pctClamp}%`;
+        barraDisco.className = 'barra-disco-preenchimento ' + (pct >= 90 ? 'perigo' : (pct >= 85 ? 'alerta' : 'ok'));
+        barraDisco.title = `${pctFormatado}% usado`;
+      }
+    }
+
+    // 3. KPIs
+    const elTotalGrav = document.querySelector('#arm-kpi-total-gravacoes');
+    const elSubGrav = document.querySelector('#arm-kpi-sub-gravacoes');
+    const elEspacoOcup = document.querySelector('#arm-kpi-espaco-ocupado');
+    const elRetDias = document.querySelector('#arm-kpi-retencao-dias');
+    const elRetStatus = document.querySelector('#arm-kpi-retencao-status');
+
+    const countGrav = typeof total_gravacoes === 'number'
+      ? total_gravacoes
+      : (dadosArmazenamento.gravacoes ? dadosArmazenamento.gravacoes.length : 0);
+    const bytesGrav = typeof total_bytes === 'number'
+      ? total_bytes
+      : ((dadosArmazenamento.gravacoes || []).reduce((acc, g) => acc + (g.bytes || 0), 0));
+
+    if (elTotalGrav) elTotalGrav.textContent = countGrav.toLocaleString('pt-BR');
+    if (elSubGrav) {
+      elSubGrav.textContent = truncado ? `${countGrav} listadas (truncado)` : `${countGrav} arquivos no disco`;
+    }
+    if (elEspacoOcup) elEspacoOcup.textContent = formatBytes(bytesGrav);
+
+    if (elRetDias) {
+      elRetDias.textContent = (retencao_dias !== undefined && retencao_dias !== null)
+        ? `${retencao_dias} dias`
+        : 'Sem limite';
+    }
+    if (elRetStatus) {
+      elRetStatus.textContent = retencao_auto ? 'Exclusão automática: Ativa' : 'Exclusão automática: Inativa';
+      elRetStatus.style.color = retencao_auto ? 'var(--accent-dark)' : 'var(--muted)';
+    }
+
+    // 4. Tabela de gravações
+    filtrarERenderizarTabelaArmazenamento();
+  }
+
+  function filtrarERenderizarTabelaArmazenamento() {
+    const tbody = document.querySelector('#corpo-tabela-armazenamento');
+    if (!tbody) return;
+
+    if (!dadosArmazenamento || !Array.isArray(dadosArmazenamento.gravacoes)) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">Nenhuma gravação carregada.</td></tr>';
+      return;
+    }
+
+    let lista = dadosArmazenamento.gravacoes;
+
+    if (termoBuscaArmazenamento) {
+      const t = termoBuscaArmazenamento;
+      lista = lista.filter(g => {
+        const arq = String(g.arquivo || '').toLowerCase();
+        const pasta = String(g.pasta_job || '').toLowerCase();
+        const cam = String(g.camera || '').toLowerCase();
+        const id = String(g.id || '').toLowerCase();
+        return arq.includes(t) || pasta.includes(t) || cam.includes(t) || id.includes(t);
+      });
+    }
+
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">${termoBuscaArmazenamento ? 'Nenhum arquivo corresponde à busca.' : 'Nenhuma gravação encontrada no disco.'}</td></tr>`;
+      return;
+    }
+
+    const maxRender = 400;
+    const itensRender = lista.slice(0, maxRender);
+
+    let html = itensRender.map(g => {
+      const tamanhoStr = formatBytes(g.bytes);
+      const idadeStr = formatarIdadeHumana(g.idade_segundos, g.baixado_em);
+      const expiracaoHtml = formatarExpiracao(g.dias_restantes, g.aviso_exclusao);
+      const idEscapado = encodeURIComponent(g.id);
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:700; color:var(--ink); word-break:break-all;">${g.arquivo}</div>
+            <div style="font-size:.76rem; color:var(--muted); margin-top:2px;">
+              <span>Pasta: <code>${g.pasta_job || '-'}</code></span>
+              ${g.camera ? ` • <span>Câm ${g.camera}</span>` : ''}
+            </div>
+          </td>
+          <td style="white-space:nowrap; font-weight:600;">${tamanhoStr}</td>
+          <td style="white-space:nowrap; color:var(--muted); font-size:.82rem;">${idadeStr}</td>
+          <td>${expiracaoHtml}</td>
+          <td style="text-align:right;">
+            <button type="button" class="btn-excluir-gravacao" data-id="${idEscapado}" title="Excluir este arquivo de gravação do disco">🗑️ Excluir</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    if (lista.length > maxRender) {
+      html += `<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:10px; font-size:.82rem;">Mostrando ${maxRender} de ${lista.length} arquivos. Refine a busca para encontrar arquivos específicos.</td></tr>`;
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  async function excluirGravacaoDisco(idGravacao) {
+    if (!idGravacao) return;
+    const confirmou = window.confirm(
+      `Deseja realmente excluir esta gravação do disco?\n\n` +
+      `Arquivo: ${idGravacao}\n\n` +
+      `Esta ação é irreversível e liberará espaço no disco.`
+    );
+    if (!confirmou) return;
+
+    try {
+      const res = await fetch('/api/armazenamento/gravacao', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: idGravacao })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.erro || 'Falha ao excluir gravação');
+      await carregarArmazenamento(true);
+    } catch (err) {
+      alert('Erro ao excluir gravação: ' + err.message);
+    }
+  }
+
+  document.querySelector('#btn-recarregar-armazenamento')?.addEventListener('click', () => carregarArmazenamento(true));
+
+  document.querySelector('#corpo-tabela-armazenamento')?.addEventListener('click', evento => {
+    const btn = evento.target.closest('.btn-excluir-gravacao');
+    if (btn && btn.dataset.id) {
+      excluirGravacaoDisco(decodeURIComponent(btn.dataset.id));
+    }
+  });
+
+  const inputFiltroArmazenamento = document.querySelector('#filtro-tabela-armazenamento');
+  if (inputFiltroArmazenamento) {
+    inputFiltroArmazenamento.addEventListener('input', e => {
+      termoBuscaArmazenamento = e.target.value.trim().toLowerCase();
+      filtrarERenderizarTabelaArmazenamento();
     });
   }
 
